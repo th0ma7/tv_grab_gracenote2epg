@@ -1,432 +1,417 @@
-#!/usr/bin/env python3
 """
-Module for parsing Gracenote data (stations and episodes)
+gracenote2epg.gracenote2epg_parser - Guide data parsing
+
+Handles parsing of TV guide data from gracenote.com, including stations,
+episodes, and extended series details with intelligent caching.
 """
+
+import calendar
 import json
 import logging
 import re
-import calendar
 import time
+from datetime import datetime
+from typing import Dict, List, Optional, Set, Tuple
+
+from .gracenote2epg_downloader import OptimizedDownloader
+from .gracenote2epg_tvheadend import TvheadendClient
+from .gracenote2epg_utils import CacheManager, TimeUtils
 
 
-def fix_icon_url(icon_data):
-    """
-    Fix and format icon URL
+class GuideParser:
+    """Parses TV guide data and manages extended details"""
 
-    Args:
-        icon_data: Icon data from API
+    def __init__(self, cache_manager: CacheManager, downloader: OptimizedDownloader,
+                 tvh_client: Optional[TvheadendClient] = None):
+        self.cache_manager = cache_manager
+        self.downloader = downloader
+        self.tvh_client = tvh_client
+        self.schedule: Dict = {}
 
-    Returns:
-        str: Complete icon URL or empty string
-    """
-    if not icon_data:
-        return ""
+    def optimized_guide_download(self, grid_time_start: float, day_hours: int,
+                                 lineupcode: str, country: str, device: str,
+                                 zipcode: str, refresh_hours: int = 48) -> bool:
+        """Optimized guide download with intelligent caching"""
 
-    # If it's already a complete URL, return it
-    if isinstance(icon_data, str):
-        if icon_data.startswith('http'):
-            return icon_data.split('?')[0]  # Remove query parameters
-        elif icon_data.startswith('//'):
-            return f"http:{icon_data}".split('?')[0]
-        elif '/' in icon_data:
-            # Probably a relative path
-            return f"http://zap2it.tmsimg.com{icon_data}".split('?')[0]
+        logging.info('Starting optimized guide download')
+        logging.info('  Refresh window: first %d hours will be re-downloaded', refresh_hours)
+        logging.info('  Guide duration: %d blocks (%d hours)', day_hours, day_hours * 3)
 
-    # If it's a dictionary with icon information
-    if isinstance(icon_data, dict):
-        # Look for different possible fields
-        url = None
-        for field in ['url', 'src', 'href', 'link']:
-            if field in icon_data:
-                url = icon_data[field]
-                break
+        downloaded_count = 0
+        cached_count = 0
+        failed_count = 0
 
-        if url:
-            if url.startswith('http'):
-                return url.split('?')[0]
-            elif url.startswith('//'):
-                return f"http:{url}".split('?')[0]
-            elif '/' in url:
-                return f"http://zap2it.tmsimg.com{url}".split('?')[0]
+        count = 0
+        grid_time = grid_time_start
 
-    # If it's just an image ID, build the URL
-    if isinstance(icon_data, str) and not '/' in icon_data:
-        # Typical format: p21805903_b_v13_ab -> build complete URL
-        # Try different Gracenote/TMS URL formats
-        base_urls = [
-            "http://zap2it.tmsimg.com/assets/",
-            "http://zap2it.tmsimg.com/h3/NowShowing/",
-            "http://image.tmdb.org/t/p/w185/",
-            "http://tvlistings.gracenote.com/static/"
-        ]
+        while count < day_hours:
+            # Generate standardized filename
+            standard_block_time = TimeUtils.get_standard_block_time(grid_time)
+            filename = standard_block_time.strftime('%Y%m%d%H') + '.json.gz'
 
-        # For IDs starting with 'p' (programs)
-        if icon_data.startswith('p'):
-            return f"http://zap2it.tmsimg.com/assets/{icon_data}.jpg"
-        # For IDs starting with 's' (stations/channels)
-        elif icon_data.startswith('s'):
-            return f"http://zap2it.tmsimg.com/h3/NowShowing/{icon_data}_ll_h15_ab.png"
-        else:
-            # Generic format
-            return f"http://zap2it.tmsimg.com/assets/{icon_data}.jpg"
+            # Build download URL
+            url = ('http://tvlistings.gracenote.com/api/grid?aid=orbebb&TMSID=&AffiliateID=lat&FromPage=TV%20Grid&lineupId=&timespan=3&headendId=' +
+                   str(lineupcode) + '&country=' + str(country) + '&device=' + str(device) + '&postalCode=' +
+                   str(zipcode) + '&time=' + str(int(grid_time)) + '&isOverride=true&pref=-&userId=-')
 
-    return ""
-
-
-def parseStations(content, config, schedule, tvhMatchDict):
-    """
-    Parse stations from JSON content
-
-    Args:
-        content: JSON content from Gracenote API
-        config: Configuration dictionary
-        schedule: Global schedule dictionary to populate
-        tvhMatchDict: TVHeadend channel mapping dictionary
-
-    Returns:
-        int: Number of processed stations
-    """
-    try:
-        ch_guide = json.loads(content)
-        logging.info('Parsing stations from API response')
-
-        if 'channels' not in ch_guide:
-            logging.warning('No "channels" key found in API response')
-            return 0
-
-        channels_list = ch_guide['channels']
-        logging.info('Found %d channels in API response', len(channels_list))
-
-        processed_count = 0
-
-        for station in channels_list:
-            skey = station.get('channelId')
-            if not skey:
-                continue
-
-            # Configuration-based filtering
-            should_process = False
-
-            # If we have an explicit station list in config
-            if config['stationList'] is not None and config['stationList'].strip():
-                should_process = skey in config['stationList'].split(',')
-            # If we use TVHeadend filter
-            elif config.get('use_tvh_filter', False):
-                chnumStart = str(station.get('channelNo', ''))
-                chSign = station.get('callSign')
-
-                # Create channel number - simplified logic
-                if '.' not in chnumStart and chSign is not None:
-                    chsub = re.search(r'(\d+)$', chSign)
-                    if chsub is not None:
-                        channel_num = chnumStart + '.' + chsub.group(0)
-                    else:
-                        channel_num = chnumStart + '.1'
+            # Download block safely
+            if self.cache_manager.download_guide_block_safe(self.downloader, grid_time, filename, url, refresh_hours):
+                # Determine if it was downloaded or cached
+                time_from_now = grid_time - time.time()
+                if time_from_now < (refresh_hours * 3600):
+                    # In refresh window - likely downloaded
+                    downloaded_count += 1
                 else:
-                    channel_num = chnumStart
-
-                # Check if this channel exists in TVHeadend
-                should_process = channel_num in config.get('tvh_channels', [])
-
-                if should_process:
-                    logging.debug('Channel %s (%s) matches TVHeadend channel %s', skey, chSign, channel_num)
+                    # Outside refresh window - likely cached
+                    cached_count += 1
             else:
-                # No filter - process all stations
-                should_process = True
+                failed_count += 1
 
-            if should_process:
-                schedule[skey] = {}
-                chSign = station.get('callSign')
-                chName = station.get('affiliateName')
-                schedule[skey]['chfcc'] = chSign
-                schedule[skey]['chnam'] = chName
-
-                # Icon correction - look in multiple possible fields
-                icon_url = ""
-
-                # Look in different icon fields
-                for icon_field in ['thumbnail', 'logo', 'icon', 'image', 'logoURL']:
-                    if icon_field in station and station[icon_field]:
-                        icon_url = fix_icon_url(station[icon_field])
-                        if icon_url:
-                            logging.debug('Found icon for %s in field %s: %s', skey, icon_field, icon_url)
-                            break
-
-                # If no icon found, try to build from station ID
-                if not icon_url and skey:
-                    icon_url = fix_icon_url(skey)
-                    if icon_url:
-                        logging.debug('Generated icon URL for %s: %s', skey, icon_url)
-
-                schedule[skey]['chicon'] = icon_url
-
-                chnumStart = station.get('channelNo')
-
-                # Channel number simplification
-                if '.' not in str(chnumStart) and chSign is not None:
-                    chsub = re.search(r'(\d+)$', chSign)
-                    if chsub is not None:
-                        chnumUpdate = str(chnumStart) + '.' + chsub.group(0)
-                    else:
-                        chnumUpdate = str(chnumStart) + '.1'
-                else:
-                    chnumUpdate = str(chnumStart)
-
-                schedule[skey]['chnum'] = chnumUpdate
-
-                # Add TVHeadend name if available
-                if config['tvhmatch'] == 'true' and '.' in chnumUpdate:
-                    if chnumUpdate in tvhMatchDict:
-                        schedule[skey]['chtvh'] = tvhMatchDict[chnumUpdate]
-                    else:
-                        schedule[skey]['chtvh'] = None
-
-                processed_count += 1
-                logging.debug('Processed station %s: num=%s, icon=%s',
-                             skey, chnumUpdate, schedule[skey]['chicon'][:50] + '...' if schedule[skey]['chicon'] else 'None')
-
-        logging.info('Successfully parsed %d/%d stations (filtered by %s)',
-                    processed_count, len(channels_list),
-                    'explicit list' if (config['stationList'] and config['stationList'].strip())
-                    else 'TVHeadend' if config.get('use_tvh_filter')
-                    else 'none (all stations)')
-
-        return processed_count
-
-    except Exception as e:
-        logging.exception('Exception: parseStations')
-        return 0
-
-
-def parseEpisodes(content, config, schedule):
-    """
-    Parse episodes from JSON content
-
-    Args:
-        content: JSON content from Gracenote API
-        config: Configuration dictionary
-        schedule: Global schedule dictionary to populate
-
-    Returns:
-        str: "Safe" or "Unsafe" depending on TBA content found
-    """
-    CheckTBA = "Safe"
-    try:
-        ch_guide = json.loads(content)
-        logging.info('Parsing episodes from API response')
-
-        # Check if response contains channels
-        if 'channels' not in ch_guide:
-            logging.warning('No "channels" key found in API response for episodes')
-            return CheckTBA
-
-        for station in ch_guide['channels']:
-            skey = station.get('channelId')
-            if not skey:
-                continue
-
-            # Check if we should process this station
-            if config['stationList'] and config['stationList'].strip():
-                if skey not in config['stationList'].split(','):
-                    continue
-
-            # Make sure station exists in schedule
-            if skey not in schedule:
-                continue
-
-            episodes = station.get('events', [])
-            logging.debug('Processing %d episodes for station %s', len(episodes), skey)
-
-            for episode in episodes:
+            # Parse the file (cached or new)
+            content = self.cache_manager.load_guide_block(filename)
+            if content:
                 try:
-                    start_time = episode.get('startTime')
-                    if not start_time:
-                        continue
+                    logging.debug('Parsing %s', filename)
 
-                    epkey = str(calendar.timegm(time.strptime(start_time, '%Y-%m-%dT%H:%M:%SZ')))
-                    schedule[skey][epkey] = {}
-
-                    program = episode.get('program', {})
-                    schedule[skey][epkey]['epid'] = program.get('tmsId')
-                    schedule[skey][epkey]['epstart'] = epkey
-
-                    end_time = episode.get('endTime')
-                    if end_time:
-                        schedule[skey][epkey]['epend'] = str(calendar.timegm(time.strptime(end_time, '%Y-%m-%dT%H:%M:%SZ')))
-                    else:
-                        schedule[skey][epkey]['epend'] = epkey
-
-                    schedule[skey][epkey]['eplength'] = episode.get('duration')
-                    schedule[skey][epkey]['epshow'] = program.get('title')
-                    schedule[skey][epkey]['eptitle'] = program.get('episodeTitle')
-                    schedule[skey][epkey]['epdesc'] = program.get('shortDesc')
-                    schedule[skey][epkey]['epyear'] = program.get('releaseYear')
-                    schedule[skey][epkey]['eprating'] = episode.get('rating')
-                    schedule[skey][epkey]['epflag'] = episode.get('flag', [])
-                    schedule[skey][epkey]['eptags'] = episode.get('tags', [])
-                    schedule[skey][epkey]['epsn'] = program.get('season')
-                    schedule[skey][epkey]['epen'] = program.get('episode')
-
-                    # Episode icon correction
-                    episode_thumbnail = episode.get('thumbnail')
-                    if episode_thumbnail:
-                        schedule[skey][epkey]['epthumb'] = fix_icon_url(episode_thumbnail)
-                    else:
-                        schedule[skey][epkey]['epthumb'] = None
-
-                    schedule[skey][epkey]['epoad'] = None
-                    schedule[skey][epkey]['epstar'] = None
-                    schedule[skey][epkey]['epfilter'] = episode.get('filter', [])
-
-                    # Genre management
-                    genres = program.get('genres', [])
-                    if genres:
-                        schedule[skey][epkey]['epgenres'] = genres
-                    else:
-                        schedule[skey][epkey]['epgenres'] = None
-
-                    # Credits management
-                    credits = program.get('credits', {})
-                    if credits:
-                        schedule[skey][epkey]['epcredits'] = credits
-                    else:
-                        schedule[skey][epkey]['epcredits'] = None
-
-                    schedule[skey][epkey]['epxdesc'] = program.get('longDesc')
-                    schedule[skey][epkey]['epseries'] = episode.get('seriesId')
-
-                    # Episode image (different from thumbnail)
-                    episode_image = program.get('image')
-                    if episode_image:
-                        schedule[skey][epkey]['epimage'] = fix_icon_url(episode_image)
-                    else:
-                        schedule[skey][epkey]['epimage'] = None
-
-                    schedule[skey][epkey]['epfan'] = None
-
-                    # Check for TBA content
-                    ep_show = schedule[skey][epkey]['epshow']
-                    ep_title = schedule[skey][epkey]['eptitle']
-
-                    if ep_show and "TBA" in ep_show:
-                        CheckTBA = "Unsafe"
-                    elif ep_title and "TBA" in ep_title:
-                        CheckTBA = "Unsafe"
+                    if count == 0:
+                        self.parse_stations(content)
+                    self.parse_episodes(content)
 
                 except Exception as e:
-                    logging.warning('Error parsing episode in station %s: %s', skey, str(e))
+                    logging.warning('Parse error for %s: %s', filename, str(e))
+
+            count += 1
+            grid_time = grid_time + 10800  # Next 3-hour block
+
+        # Summary
+        total_blocks = day_hours
+        success_rate = ((downloaded_count + cached_count) / total_blocks * 100) if total_blocks > 0 else 0
+
+        logging.info('Guide download completed:')
+        logging.info('  Blocks: %d total (%d downloaded, %d cached, %d failed)',
+                    total_blocks, downloaded_count, cached_count, failed_count)
+        logging.info('  Cache efficiency: %.1f%% reused', (cached_count/total_blocks*100) if total_blocks > 0 else 0)
+        logging.info('  Success rate: %.1f%%', success_rate)
+
+        return success_rate >= 80  # Consider successful if 80%+ blocks available
+
+    def parse_stations(self, content: bytes):
+        """Parse station information from guide data"""
+        try:
+            ch_guide = json.loads(content)
+
+            for station in ch_guide.get('channels', []):
+                station_id = station.get('channelId')
+
+                # Determine if this station should be processed
+                if self._should_process_station(station):
+                    self.schedule[station_id] = {}
+
+                    call_sign = station.get('callSign')
+                    affiliate_name = station.get('affiliateName')
+
+                    self.schedule[station_id]['chfcc'] = call_sign
+                    self.schedule[station_id]['chnam'] = affiliate_name
+
+                    # Extract icon URL (remove query parameters)
+                    thumbnail = station.get('thumbnail', '')
+                    if thumbnail:
+                        self.schedule[station_id]['chicon'] = thumbnail.split('?')[0]
+                    else:
+                        self.schedule[station_id]['chicon'] = ''
+
+                    # Handle channel number with subchannel logic
+                    if self.tvh_client:
+                        matched_channel = self.tvh_client.get_matched_channel_number(station, use_channel_matching=True)
+                        tvh_name = self.tvh_client.get_tvh_channel_name(matched_channel)
+                    else:
+                        matched_channel = station.get('channelNo', '')
+                        tvh_name = None
+
+                    self.schedule[station_id]['chnum'] = matched_channel
+                    self.schedule[station_id]['chtvh'] = tvh_name
+
+        except Exception as e:
+            logging.exception('Exception in parse_stations: %s', str(e))
+
+    def parse_episodes(self, content: bytes) -> str:
+        """Parse episode information from guide data"""
+        check_tba = "Safe"
+
+        try:
+            ch_guide = json.loads(content)
+
+            for station in ch_guide.get('channels', []):
+                station_id = station.get('channelId')
+
+                # Same logic as in parse_stations
+                if self._should_process_station(station):
+                    episodes = station.get('events', [])
+
+                    for episode in episodes:
+                        # Create episode key from start time
+                        start_time_str = episode.get('startTime', '')
+                        if start_time_str:
+                            try:
+                                ep_key = str(calendar.timegm(time.strptime(start_time_str, '%Y-%m-%dT%H:%M:%SZ')))
+                            except (ValueError, TypeError):
+                                continue  # Skip invalid time format
+                        else:
+                            continue  # Skip if no start time
+
+                        # Initialize episode data
+                        self.schedule[station_id][ep_key] = {}
+                        ep_data = self.schedule[station_id][ep_key]
+
+                        # Parse program information
+                        program = episode.get('program', {})
+
+                        # Get descriptions with fallback logic
+                        short_desc = program.get('shortDesc') or ''
+                        long_desc = program.get('longDesc') or ''
+
+                        # Handle None values
+                        if short_desc is None:
+                            short_desc = ''
+                        if long_desc is None:
+                            long_desc = ''
+
+                        # Debug: log if no description found
+                        if not short_desc and not long_desc:
+                            logging.debug('No description found for: %s - %s',
+                                        program.get('title', 'Unknown'),
+                                        program.get('episodeTitle', ''))
+
+                        # Parse end time
+                        end_time_str = episode.get('endTime', '')
+                        if end_time_str:
+                            try:
+                                ep_end = str(calendar.timegm(time.strptime(end_time_str, '%Y-%m-%dT%H:%M:%SZ')))
+                            except (ValueError, TypeError):
+                                ep_end = None
+                        else:
+                            ep_end = None
+
+                        # Populate episode data
+                        ep_data.update({
+                            'epid': program.get('tmsId'),
+                            'epstart': ep_key,
+                            'epend': ep_end,
+                            'eplength': episode.get('duration'),
+                            'epshow': program.get('title'),
+                            'eptitle': program.get('episodeTitle'),
+                            'epdesc': long_desc if long_desc else short_desc,  # Priority to longDesc
+                            'epyear': program.get('releaseYear'),
+                            'eprating': episode.get('rating'),
+                            'epflag': episode.get('flag', []),
+                            'eptags': episode.get('tags', []),
+                            'epsn': program.get('season'),
+                            'epen': program.get('episode'),
+                            'epthumb': episode.get('thumbnail', '').split('?')[0] if episode.get('thumbnail') else '',
+                            'epoad': None,  # Will be populated by extended details
+                            'epstar': None,
+                            'epfilter': episode.get('filter', []),
+                            'epgenres': None,  # Will be populated by extended details
+                            'epcredits': None,  # Will be populated by extended details
+                            'epseries': program.get('seriesId'),
+                            'epimage': None,  # Will be populated by extended details
+                            'epfan': None,  # Will be populated by extended details
+                            'epseriesdesc': None,  # Will be populated by extended details
+                        })
+
+                        # Check for TBA listings
+                        if ep_data['epshow'] and "TBA" in ep_data['epshow']:
+                            check_tba = "Unsafe"
+                        elif ep_data['eptitle'] and "TBA" in ep_data['eptitle']:
+                            check_tba = "Unsafe"
+
+        except Exception as e:
+            logging.exception('Exception in parse_episodes: %s', str(e))
+
+        return check_tba
+
+    def _should_process_station(self, station_data: Dict) -> bool:
+        """Determine if a station should be processed based on filtering rules"""
+        if self.tvh_client:
+            return self.tvh_client.should_process_station(
+                station_data,
+                explicit_station_list=None,  # This would come from config
+                use_tvh_matching=True,
+                use_channel_matching=True
+            )
+        return True  # Process all stations if no TVH client
+
+    def get_active_series_list(self) -> List[str]:
+        """Extract list of active series from current schedule"""
+        active_series = set()
+        for station in self.schedule:
+            sdict = self.schedule[station]
+            for episode in sdict:
+                if not episode.startswith("ch"):
+                    edict = sdict[episode]
+                    series_id = edict.get('epseries')
+                    if series_id:
+                        active_series.add(series_id)
+        return list(active_series)
+
+    def parse_extended_details(self) -> bool:
+        """Download and parse extended program details - returns success status"""
+        show_list = []
+        fail_list = []
+        download_count = 0
+        success_count = 0
+        cached_series = set()
+        total_usages = 0
+
+        logging.info('Starting extended details download using optimized session')
+
+        try:
+            for station in self.schedule:
+                sdict = self.schedule[station]
+                for episode in sdict:
+                    if not episode.startswith("ch"):
+                        edict = sdict[episode]
+                        series_id = edict.get('epseries')
+
+                        # Check that series_id is not None or empty
+                        if not series_id or series_id in fail_list:
+                            continue
+
+                        show_list.append(series_id)
+
+                        # Check if we already have cached details
+                        cached_details = self.cache_manager.load_series_details(series_id)
+
+                        if cached_details is None:
+                            # Need to download new details
+                            download_count += 1
+
+                            url = 'https://tvlistings.gracenote.com/api/program/overviewDetails'
+                            data = f'programSeriesID={series_id}'
+
+                            logging.info('Downloading extended details for: %s', series_id)
+                            logging.debug('  URL: %s?%s', url, data)
+
+                            # Encode data for urllib
+                            data_encoded = data.encode('utf-8')
+
+                            # Download using urllib method
+                            content = self.downloader.download_with_retry_urllib(url, data=data_encoded, timeout=6)
+
+                            if content:
+                                if self.cache_manager.save_series_details(series_id, content):
+                                    try:
+                                        cached_details = json.loads(content)
+                                        logging.info('  Successfully downloaded: %s.json (%d bytes)', series_id, len(content))
+                                        success_count += 1
+                                    except json.JSONDecodeError:
+                                        logging.warning('  Invalid JSON received for: %s', series_id)
+                                        fail_list.append(series_id)
+                                        continue
+                                else:
+                                    logging.warning('  Error saving details for: %s', series_id)
+                                    fail_list.append(series_id)
+                                    continue
+                            else:
+                                logging.warning('  Failed to download details for: %s', series_id)
+                                fail_list.append(series_id)
+                                continue
+                        else:
+                            # Use existing cached details
+                            cached_series.add(series_id)
+                            total_usages += 1
+                            logging.debug('Using cached details for: %s', series_id)
+
+                        # Process the details (cached or newly downloaded)
+                        if cached_details:
+                            self._process_series_details(edict, cached_details, series_id)
+
+            # Final statistics
+            stats = self.downloader.get_stats()
+            total_series = len(set(show_list))
+            unique_cached = len(cached_series)
+
+            logging.info('Extended details processing completed:')
+            logging.info('  Total unique series: %d', total_series)
+            logging.info('  Downloads attempted: %d', download_count)
+            logging.info('  Successful downloads: %d', success_count)
+            logging.info('  Unique series from cache: %d', unique_cached)
+            logging.info('  Total cache file usages: %d', total_usages)
+            logging.info('  Failed downloads: %d', len(fail_list))
+            logging.info('  WAF blocks during details: %d', stats['waf_blocks'])
+
+            # Calculate success rate and cache efficiency
+            success_rate = (success_count / download_count * 100) if download_count > 0 else 100
+            cache_efficiency = (unique_cached / total_series * 100) if total_series > 0 else 0
+
+            logging.info('  Download success rate: %.1f%%', success_rate)
+            logging.info('  Cache efficiency: %.1f%% (%d/%d unique series reused)',
+                        cache_efficiency, unique_cached, total_series)
+
+            if fail_list:
+                logging.info('  Failed series (first 10): %s', ', '.join(fail_list[:10]))
+
+            # Return success status
+            return success_rate >= 70 or download_count == 0
+
+        except Exception as e:
+            logging.error('Critical error in parse_extended_details: %s', str(e))
+            return False
+
+    def _process_series_details(self, episode_data: Dict, series_details: Dict, series_id: str):
+        """Process extended series details and update episode data"""
+        try:
+            # Extract extended series description
+            series_desc = series_details.get('seriesDescription')
+            if series_desc and str(series_desc).strip():
+                episode_data['epseriesdesc'] = str(series_desc).strip()
+                logging.debug('Found extended series description for %s: %s',
+                            series_id, series_desc[:50] + '...' if len(series_desc) > 50 else series_desc)
+
+            # Process other details
+            episode_data['epimage'] = series_details.get('seriesImage')
+            episode_data['epfan'] = series_details.get('backgroundImage')
+
+            # Handle genres
+            ep_genres = series_details.get('seriesGenres')
+            if series_id.startswith("MV"):  # Movie
+                overview_tab = series_details.get('overviewTab', {})
+                if isinstance(overview_tab, dict):
+                    episode_data['epcredits'] = overview_tab.get('cast')
+                ep_genres = 'Movie|' + ep_genres if ep_genres else 'Movie'
+
+            if ep_genres:
+                episode_data['epgenres'] = ep_genres.split('|')
+
+            # Process upcoming episodes for original air date
+            ep_list = series_details.get('upcomingEpisodeTab', [])
+            if not isinstance(ep_list, list):
+                ep_list = []
+
+            ep_id = episode_data.get('epid', '')
+            for airing in ep_list:
+                if not isinstance(airing, dict):
                     continue
 
-    except Exception as e:
-        logging.exception('Exception: parseEpisodes')
+                if ep_id.lower() == airing.get('tmsID', '').lower():
+                    if not series_id.startswith("MV"):  # Not a movie
+                        try:
+                            orig_date = airing.get('originalAirDate')
+                            if orig_date and orig_date != '':
+                                # Handle date format
+                                ep_oad = re.sub('Z', ':00Z', orig_date)
+                                episode_data['epoad'] = str(calendar.timegm(time.strptime(ep_oad, '%Y-%m-%dT%H:%M:%SZ')))
+                        except Exception:
+                            pass  # Ignore date parsing errors
 
-    return CheckTBA
+                        # Check for TBA listings and remove if found
+                        try:
+                            tba_check = airing.get('episodeTitle', '')
+                            if tba_check and "TBA" in tba_check:
+                                # Mark for deletion (would be handled by cache cleanup)
+                                logging.info('  Found TBA listing in %s', series_id)
+                        except Exception:
+                            pass
 
-
-def validateChannelNumber(chnumStart, chSign):
-    """
-    Create and validate channel number based on call sign
-
-    Args:
-        chnumStart: Starting channel number from API
-        chSign: Channel call sign
-
-    Returns:
-        str: Formatted channel number
-    """
-    if '.' not in str(chnumStart) and chSign is not None:
-        chsub = re.search(r'(\d+)$', chSign)
-        if chsub is not None:
-            return str(chnumStart) + '.' + chsub.group(0)
-        else:
-            return str(chnumStart) + '.1'
-    else:
-        return str(chnumStart)
-
-
-def shouldProcessStation(skey, station, config):
-    """
-    Determine if a station should be processed based on configuration
-
-    Args:
-        skey: Station key (channelId)
-        station: Station data from API
-        config: Configuration dictionary
-
-    Returns:
-        tuple: (should_process: bool, channel_number: str)
-    """
-    should_process = False
-    channel_number = ""
-
-    # If we have an explicit station list in config
-    if config['stationList'] is not None and config['stationList'].strip():
-        should_process = skey in config['stationList'].split(',')
-    # If we use TVHeadend filter
-    elif config.get('use_tvh_filter', False):
-        chnumStart = str(station.get('channelNo', ''))
-        chSign = station.get('callSign')
-
-        channel_number = validateChannelNumber(chnumStart, chSign)
-        should_process = channel_number in config.get('tvh_channels', [])
-
-        if should_process:
-            logging.debug('Channel %s (%s) matches TVHeadend channel %s', skey, chSign, channel_number)
-    else:
-        # No filter - process all stations
-        should_process = True
-
-    return should_process, channel_number
-
-
-def debug_station_icons(schedule):
-    """
-    Debug function to check station icons
-
-    Args:
-        schedule: Schedule dictionary
-    """
-    logging.info('=== DEBUG: Station Icons ===')
-    for station_id, station_data in schedule.items():
-        if not station_id.startswith('ch'):  # Skip episode data
-            continue
-        icon = station_data.get('chicon', 'No icon')
-        chfcc = station_data.get('chfcc', 'Unknown')
-        logging.info('Station %s (%s): %s', station_id, chfcc, icon)
-    logging.info('=== END DEBUG ===')
-
-
-def debug_episode_icons(schedule, station_limit=2, episode_limit=3):
-    """
-    Debug function to check episode icons
-
-    Args:
-        schedule: Schedule dictionary
-        station_limit: Number of stations to check
-        episode_limit: Number of episodes per station
-    """
-    logging.info('=== DEBUG: Episode Icons ===')
-    station_count = 0
-
-    for station_id, station_data in schedule.items():
-        if station_count >= station_limit:
-            break
-
-        episode_count = 0
-        chfcc = station_data.get('chfcc', 'Unknown')
-        logging.info('Station %s (%s):', station_id, chfcc)
-
-        for episode_key, episode_data in station_data.items():
-            if episode_key.startswith('ch') or episode_count >= episode_limit:
-                continue
-
-            epshow = episode_data.get('epshow', 'Unknown')
-            epthumb = episode_data.get('epthumb', 'No thumbnail')
-            epimage = episode_data.get('epimage', 'No image')
-
-            logging.info('  Episode %s: thumb=%s, image=%s', epshow[:30], epthumb, epimage)
-            episode_count += 1
-
-        station_count += 1
-
-    logging.info('=== END DEBUG ===')
+        except Exception as e:
+            logging.warning('Error processing series details for %s: %s', series_id, str(e))

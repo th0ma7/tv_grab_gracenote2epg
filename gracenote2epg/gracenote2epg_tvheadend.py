@@ -1,292 +1,185 @@
-#!/usr/bin/env python3
 """
-TVHeadend Manager Module
-Manages connection and data retrieval from TVHeadend
+gracenote2epg.gracenote2epg_tvheadend - TVheadend integration
+
+Handles communication with TVheadend server for automatic channel filtering
+and channel number matching.
 """
 
 import logging
-import time
+from typing import Dict, Optional, Set, List
 import requests
 from requests.auth import HTTPDigestAuth
-from typing import Dict, Optional, Tuple
 
 
-class TVHeadendManager:
-    """
-    Manager for TVHeadend interactions
-    """
+class TvheadendClient:
+    """Client for TVheadend server integration"""
 
-    def __init__(self, host: str = "127.0.0.1", port: str = "9981",
-                 username: Optional[str] = None, password: Optional[str] = None):
-        """
-        Initialize TVHeadend manager
-
-        Args:
-            host: TVHeadend IP address or hostname
-            port: TVHeadend port
-            username: Username (optional)
-            password: Password (optional)
-        """
-        self.host = host
+    def __init__(self, url: str, port: str, username: Optional[str] = None,
+                 password: Optional[str] = None, timeout: int = 5):
+        self.url = url
         self.port = port
         self.username = username
         self.password = password
-        self.base_url = f"http://{host}:{port}"
-        self.channels = {}
-        self.is_available = None
+        self.timeout = timeout
+        self.base_url = f"http://{url}:{port}"
+        self.channels: Dict[str, str] = {}  # channel_number -> channel_name
 
-    def test_connection(self, timeout: int = 5) -> bool:
-        """
-        Test connection to TVHeadend
-
-        Args:
-            timeout: Timeout in seconds
-
-        Returns:
-            True if TVHeadend is accessible, False otherwise
-        """
+    def fetch_channels(self) -> Dict[str, str]:
+        """Fetch enabled channels from TVheadend server"""
         try:
-            test_url = f"{self.base_url}/api/serverinfo"
+            channels_url = f"{self.base_url}/api/channel/grid"
+            params = {
+                'all': '1',
+                'limit': '999999999',
+                'sort': 'name',
+                'filter': '[{"type":"boolean","value":true,"field":"enabled"}]'
+            }
+
             if self.username and self.password:
-                response = requests.get(test_url,
-                                      auth=HTTPDigestAuth(self.username, self.password),
-                                      timeout=timeout)
+                logging.info('TVheadend access using username and password...')
+                response = requests.get(
+                    channels_url,
+                    params=params,
+                    auth=HTTPDigestAuth(self.username, self.password),
+                    timeout=self.timeout
+                )
             else:
-                response = requests.get(test_url, timeout=timeout)
+                logging.info('TVheadend anonymous access...')
+                response = requests.get(channels_url, params=params, timeout=self.timeout)
 
-            response.raise_for_status()
-            self.is_available = True
-            logging.info("TVHeadend connection test successful")
-            return True
-
-        except Exception as e:
-            self.is_available = False
-            logging.warning("TVHeadend connection test failed: %s", str(e))
-            return False
-
-    def get_channels(self, max_retries: int = 2, retry_delay: int = 5,
-                    timeout: int = 10) -> Tuple[Dict[int, str], bool]:
-        """
-        Retrieve channel list from TVHeadend
-
-        Args:
-            max_retries: Maximum number of attempts
-            retry_delay: Delay between attempts in seconds
-            timeout: Timeout for each request
-
-        Returns:
-            Tuple (channel dictionary {number: name}, success)
-        """
-        channels_url = (f"{self.base_url}/api/channel/grid?all=1&limit=999999999"
-                       f"&sort=name&filter=[{{\"type\":\"boolean\",\"value\":true,"
-                       f"\"field\":\"enabled\"}}]")
-
-        for attempt in range(max_retries + 1):
-            try:
-                if self.username and self.password:
-                    logging.info('TVHeadend access using username and password... (attempt %d/%d)',
-                               attempt + 1, max_retries + 1)
-                    response = requests.get(channels_url,
-                                          auth=HTTPDigestAuth(self.username, self.password),
-                                          timeout=timeout)
-                else:
-                    logging.info('TVHeadend anonymous access... (attempt %d/%d)',
-                               attempt + 1, max_retries + 1)
-                    response = requests.get(channels_url, timeout=timeout)
-
-                response.raise_for_status()
-
-                logging.info('Accessing TVHeadend channel list from: %s', self.base_url)
+            if response.status_code == 200:
+                logging.info('Accessing TVheadend channel list from: %s', self.base_url)
                 channels_data = response.json()
 
-                if 'entries' not in channels_data:
-                    raise ValueError('Invalid TVHeadend response format - missing "entries" field')
+                for channel in channels_data.get('entries', []):
+                    channel_name = channel.get('name', '')
+                    channel_number = channel.get('number', '')
 
-                channels = {}
-                for ch in channels_data['entries']:
-                    channel_name = ch.get('name', 'Unknown')
-                    channel_num = ch.get('number', 0)
-                    if channel_num:  # Avoid empty/null channel numbers
-                        channels[channel_num] = channel_name
+                    if channel_number and channel_name:
+                        self.channels[str(channel_number)] = channel_name
 
-                self.channels = channels
-                logging.info('%d TVHeadend channels found', len(channels))
-                return channels, True
+                logging.info('%d TVheadend channels found...', len(self.channels))
+                return self.channels
 
-            except (requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
-                if attempt < max_retries:
-                    logging.warning('TVHeadend connection failed (attempt %d/%d): %s',
-                                  attempt + 1, max_retries + 1, str(e))
-                    logging.info('Retrying in %d seconds...', retry_delay)
-                    time.sleep(retry_delay)
+            else:
+                logging.warning('TVheadend returned status code: %d', response.status_code)
+                return {}
+
+        except requests.exceptions.ConnectionError as e:
+            logging.warning('Cannot connect to TVheadend: Connection error')
+            logging.debug('Connection error details: %s', str(e))
+            return {}
+        except requests.exceptions.Timeout:
+            logging.warning('Cannot connect to TVheadend: Timeout after %ds', self.timeout)
+            return {}
+        except requests.exceptions.RequestException as e:
+            logging.warning('Cannot connect to TVheadend: %s', str(e))
+            return {}
+        except Exception as e:
+            logging.warning('Unexpected error connecting to TVheadend: %s', str(e))
+            return {}
+
+    def get_channel_numbers(self) -> Set[str]:
+        """Get set of channel numbers from TVheadend"""
+        return set(self.channels.keys())
+
+    def get_channel_name(self, channel_number: str) -> Optional[str]:
+        """Get channel name for given channel number"""
+        return self.channels.get(str(channel_number))
+
+    def is_channel_enabled(self, channel_number: str) -> bool:
+        """Check if channel number is enabled in TVheadend"""
+        return str(channel_number) in self.channels
+
+    def should_process_station(self, station_data: Dict, explicit_station_list: Optional[list] = None,
+                              use_tvh_matching: bool = True, use_channel_matching: bool = True) -> bool:
+        """
+        Determine if a station should be processed based on filtering rules
+
+        Args:
+            station_data: Station data from guide with channelId, channelNo, callSign
+            explicit_station_list: Optional list of specific station IDs
+            use_tvh_matching: Whether to use TVheadend channel filtering
+            use_channel_matching: Whether to match channel numbers with call signs
+        """
+        station_id = station_data.get('channelId')
+
+        # Priority 1: Use explicit station list if provided
+        if explicit_station_list:
+            should_process = station_id in explicit_station_list
+            logging.debug('Using explicit station list: %s in list = %s', station_id, should_process)
+            return should_process
+
+        # Priority 2: Use TVheadend channel filtering if enabled and available
+        if use_tvh_matching and self.channels:
+            channel_number = station_data.get('channelNo', '')
+            call_sign = station_data.get('callSign', '')
+
+            # Generate possible channel number variations
+            possible_numbers = [channel_number]
+
+            if '.' not in channel_number and use_channel_matching and call_sign:
+                # Try to extract subchannel from call sign
+                import re
+                subchannel_match = re.search(r'(\d+)$', call_sign)
+                if subchannel_match:
+                    possible_numbers.append(f"{channel_number}.{subchannel_match.group(1)}")
                 else:
-                    logging.warning('TVHeadend connection failed after %d attempts: %s',
-                                  max_retries + 1, str(e))
-                    return {}, False
+                    possible_numbers.append(f"{channel_number}.1")
 
-            except requests.exceptions.HTTPError as e:
-                logging.warning('TVHeadend HTTP error: %s', str(e))
-                return {}, False
+            # Check if any possible number matches TVheadend channels
+            for possible_number in possible_numbers:
+                if self.is_channel_enabled(possible_number):
+                    logging.debug('Station %s (channel %s->%s) matches TVheadend channel %s (%s)',
+                                station_id, channel_number, possible_number,
+                                possible_number, self.get_channel_name(possible_number))
+                    return True
 
-            except (ValueError, KeyError, TypeError) as e:
-                logging.warning('TVHeadend response parsing error: %s', str(e))
-                return {}, False
+            logging.debug('Station %s (channel %s, callsign %s) not found in TVheadend - skipping',
+                         station_id, channel_number, call_sign)
+            return False
 
-            except Exception as e:
-                logging.warning('Unexpected error accessing TVHeadend: %s', str(e))
-                return {}, False
+        # Priority 3: No filtering - process all stations
+        return True
 
-        return {}, False
-
-    def get_channel_by_number(self, channel_number: int) -> Optional[str]:
+    def get_matched_channel_number(self, station_data: Dict, use_channel_matching: bool = True) -> str:
         """
-        Get channel name by number
+        Get the matched channel number for a station, with subchannel logic
 
         Args:
-            channel_number: Channel number
-
-        Returns:
-            Channel name or None if not found
+            station_data: Station data with channelNo and callSign
+            use_channel_matching: Whether to apply channel matching logic
         """
-        return self.channels.get(channel_number)
+        channel_number = station_data.get('channelNo', '')
+        call_sign = station_data.get('callSign', '')
 
-    def get_all_channels(self) -> Dict[int, str]:
-        """
-        Return all loaded channels
+        if '.' not in channel_number and use_channel_matching and call_sign:
+            import re
+            subchannel_match = re.search(r'(\d+)$', call_sign)
+            if subchannel_match:
+                return f"{channel_number}.{subchannel_match.group(1)}"
+            else:
+                return f"{channel_number}.1"
 
-        Returns:
-            Dictionary of channels {number: name}
-        """
-        return self.channels.copy()
+        return channel_number
 
-    def is_tvheadend_available(self) -> Optional[bool]:
-        """
-        Return TVHeadend availability status
+    def get_tvh_channel_name(self, matched_channel_number: str) -> Optional[str]:
+        """Get TVheadend channel name for matched channel number"""
+        if self.channels and matched_channel_number in self.channels:
+            return self.channels[matched_channel_number]
+        return None
 
-        Returns:
-            True if available, False if not available, None if not tested
-        """
-        return self.is_available
-
-
-class TVHeadendConfig:
-    """
-    Configuration manager for TVHeadend
-    Allows automatic disabling of TVH features
-    """
-
-    def __init__(self):
-        self.tvhmatch = 'true'
-        self.chmatch = 'true'
-        self.auto_disabled = False
-
-    def disable_tvh_features(self, reason: str = "TVHeadend not available"):
-        """
-        Automatically disable TVHeadend features
-
-        Args:
-            reason: Reason for disabling
-        """
-        self.tvhmatch = 'false'
-        self.chmatch = 'false'
-        self.auto_disabled = True
-
-        logging.info('TVHeadend features disabled automatically: %s', reason)
-        logging.info('  - tvhmatch: %s', self.tvhmatch)
-        logging.info('  - chmatch: %s', self.chmatch)
-
-    def restore_tvh_features(self):
-        """
-        Restore TVHeadend features
-        """
-        if self.auto_disabled:
-            self.tvhmatch = 'true'
-            self.chmatch = 'true'
-            self.auto_disabled = False
-            logging.info('TVHeadend features restored')
-
-    def get_config_dict(self) -> Dict[str, str]:
-        """
-        Return configuration as dictionary
-
-        Returns:
-            Dictionary with TVH parameters
-        """
-        return {
-            'tvhmatch': self.tvhmatch,
-            'chmatch': self.chmatch,
-            'auto_disabled': str(self.auto_disabled)
-        }
-
-
-def create_tvheadend_manager(tvhurl: str, tvhport: str, usern: Optional[str] = None,
-                           passw: Optional[str] = None) -> TVHeadendManager:
-    """
-    Factory function to create a TVHeadend manager
-
-    Args:
-        tvhurl: TVHeadend URL
-        tvhport: TVHeadend port
-        usern: Username (optional)
-        passw: Password (optional)
-
-    Returns:
-        TVHeadendManager instance
-    """
-    return TVHeadendManager(host=tvhurl, port=tvhport, username=usern, password=passw)
-
-
-# Compatibility function to replace old tvhMatchGet
-def tvhMatchGet(tvhurl: str, tvhport: str, usern: Optional[str] = None,
-               passw: Optional[str] = None, tvh_config: Optional[TVHeadendConfig] = None) -> Dict[int, str]:
-    """
-    Compatibility function to replace old tvhMatchGet
-
-    Args:
-        tvhurl: TVHeadend URL
-        tvhport: TVHeadend port
-        usern: Username (optional)
-        passw: Password (optional)
-        tvh_config: TVHeadend configuration (optional)
-
-    Returns:
-        Dictionary of channels {number: name}
-    """
-    manager = create_tvheadend_manager(tvhurl, tvhport, usern, passw)
-
-    # Test connection first
-    if not manager.test_connection():
-        if tvh_config:
-            tvh_config.disable_tvh_features("Connection test failed")
-        return {}
-
-    # Retrieve channels
-    channels, success = manager.get_channels()
-
-    if not success and tvh_config:
-        tvh_config.disable_tvh_features("Failed to retrieve channels")
-
-    return channels
-
-
-if __name__ == "__main__":
-    # Usage example
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # Test with default parameters
-    manager = TVHeadendManager()
-
-    if manager.test_connection():
-        channels, success = manager.get_channels()
-        if success:
-            print(f"Found {len(channels)} channels:")
-            for num, name in sorted(channels.items()):
-                print(f"  {num}: {name}")
+    def log_filtering_summary(self, explicit_station_list: Optional[list] = None,
+                             use_tvh_matching: bool = True):
+        """Log summary of channel filtering configuration"""
+        if use_tvh_matching and self.channels:
+            logging.info('TVheadend channel filtering enabled: %d channels will be used as filter',
+                        len(self.channels))
+            # Show first 10 channels for debug
+            channel_sample = list(self.channels.keys())[:10]
+            logging.debug('TVheadend channels: %s', channel_sample)
+        elif explicit_station_list:
+            logging.info('Explicit station list filtering: %d stations configured',
+                        len(explicit_station_list))
         else:
-            print("Failed to retrieve channels")
-    else:
-        print("TVHeadend is not available")
-        config = TVHeadendConfig()
-        config.disable_tvh_features("Test connection failed")
-        print(f"Configuration: {config.get_config_dict()}")
+            logging.info('No channel filtering - all available stations will be processed')

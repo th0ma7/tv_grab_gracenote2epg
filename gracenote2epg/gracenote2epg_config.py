@@ -1,281 +1,337 @@
-#!/usr/bin/env python3
 """
-Configuration management module for gracenote2epg
+gracenote2epg.gracenote2epg_config - Configuration management
+
+Handles XML configuration file parsing, validation, automatic cleanup,
+and migration from older versions.
 """
-import os
-import sys
+
 import logging
+import re
+import shutil
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Set
 
 
-class GracenoteEPGConfig:
-    """
-    Configuration manager for gracenote2epg
-    """
+class ConfigManager:
+    """Manages gracenote2epg configuration file"""
 
-    def __init__(self, userdata_dir: str):
-        """
-        Initialize configuration
+    # Default configuration template
+    DEFAULT_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
+<settings version="3">
+  <setting id="zipcode">92101</setting>
+  <setting id="lineupcode">lineupId</setting>
+  <setting id="lineup">Local Over the Air Broadcast</setting>
+  <setting id="device">-</setting>
+  <setting id="days">7</setting>
+  <setting id="redays">7</setting>
+  <setting id="slist"></setting>
+  <setting id="stitle">false</setting>
+  <setting id="xdetails">true</setting>
+  <setting id="xdesc">true</setting>
+  <setting id="epgenre">3</setting>
+  <setting id="epicon">1</setting>
+  <setting id="tvhoff">true</setting>
+  <setting id="usern"></setting>
+  <setting id="passw"></setting>
+  <setting id="tvhurl">127.0.0.1</setting>
+  <setting id="tvhport">9981</setting>
+  <setting id="tvhmatch">true</setting>
+  <setting id="chmatch">true</setting>
+</settings>"""
 
-        Args:
-            userdata_dir: User data directory
-        """
-        self.userdata = userdata_dir
-        self.config = {
-            'cacheDir': '',
-            'userdata': userdata_dir,
-            'stationList': None,
-            'tvhmatch': 'false',
-            'xdesc': 'false',
-            'xdetails': 'false',
-            'epicon': '1',
-            'epgenre': '0',
-            'stitle': 'false',
-            'useragent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0',
-            'xdescOrder': [],
-            'use_tvh_filter': False,
-            'tvh_channels': []
-        }
-        self.settings_dict = {}
+    # Valid settings and their types
+    VALID_SETTINGS = {
+        # Required settings
+        'zipcode': str,
 
-    def validate_environment(self):
-        """
-        Validate critical environment variables
+        # Basic settings
+        'lineupcode': str,
+        'lineup': str,
+        'device': str,
+        'days': str,
+        'redays': str,
 
-        Returns:
-            tuple: (success: bool, error_message: str)
-        """
-        # Check ConfFile
-        conf_file = os.environ.get('ConfFile')
-        if not conf_file:
-            return False, 'Environment variable ConfFile is not set'
+        # Station filtering
+        'slist': str,
+        'stitle': bool,
 
-        settings_file = os.path.join(self.userdata, conf_file)
-        if not os.path.exists(settings_file):
-            return False, f'Configuration file not found: {settings_file}'
+        # Extended details
+        'xdetails': bool,
+        'xdesc': bool,
 
-        # Check other critical variables
-        required_vars = ['ZipCode', 'Days', 'CacheDir', 'XMLTV']
-        for var in required_vars:
-            if not os.environ.get(var):
-                logging.warning('Environment variable %s is not set', var)
+        # Display options
+        'epgenre': str,
+        'epicon': str,
 
-        return True, ''
+        # TVheadend integration
+        'tvhoff': bool,
+        'usern': str,
+        'passw': str,
+        'tvhurl': str,
+        'tvhport': str,
+        'tvhmatch': bool,
+        'chmatch': bool,
+    }
 
-    def load_xml_settings(self):
-        """
-        Load settings from XML configuration file
+    # Settings order for clean output
+    SETTINGS_ORDER = [
+        'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays',
+        'slist', 'stitle', 'xdetails', 'xdesc', 'epgenre', 'epicon',
+        'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch'
+    ]
 
-        Returns:
-            bool: True if successful, False otherwise
-        """
+    def __init__(self, config_file: Path):
+        self.config_file = Path(config_file)
+        self.settings: Dict[str, Any] = {}
+        self.version: str = "3"
+
+    def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None) -> Dict[str, Any]:
+        """Load and validate configuration file"""
+
+        # Create default config if doesn't exist
+        if not self.config_file.exists():
+            self._create_default_config()
+
+        # Parse configuration
+        self._parse_config_file()
+
+        # Override with command line arguments
+        if location_code:
+            self.settings['zipcode'] = location_code
+            logging.info('Using zipcode from command line: %s', location_code)
+
+        if days:
+            self.settings['days'] = str(days)
+            logging.info('Using days from command line: %s', days)
+
+        # Validate required settings
+        self._validate_config()
+
+        # Set defaults for missing settings
+        self._set_defaults()
+
+        return self.settings
+
+    def _create_default_config(self):
+        """Create default configuration file"""
+        logging.info('Creating default configuration: %s', self.config_file)
+
+        # Ensure directory exists
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write default configuration
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            f.write(self.DEFAULT_CONFIG)
+
+    def _parse_config_file(self):
+        """Parse XML configuration file"""
         try:
-            conf_file = os.environ.get('ConfFile')
-            settings_file = os.path.join(self.userdata, conf_file)
+            tree = ET.parse(self.config_file)
+            root = tree.getroot()
 
-            logging.info('Loading configuration from: %s', settings_file)
+            logging.info('Reading configuration from: %s', self.config_file)
 
-            # Parse XML file
-            settings = ET.parse(settings_file)
-            root = settings.getroot()
+            # Get version
+            self.version = root.attrib.get('version', '2')
+            logging.info('Configuration version: %s', self.version)
 
-            settings_found = root.findall('setting')
-            if not settings_found:
-                logging.error('No setting elements found in configuration file')
-                return False
+            # Parse settings
+            settings_dict = {}
+            valid_settings = {}
+            deprecated_settings = []
 
-            # Extract settings
-            for setting in settings_found:
-                setting_str = setting.text
-                if not setting_str:
-                    setting_str = None
+            for setting in root.findall('setting'):
                 setting_id = setting.get('id')
-                if not setting_id:
-                    continue
-                self.settings_dict[setting_id] = setting_str
 
-            logging.info('Successfully loaded %d configuration settings', len(self.settings_dict))
-            return True
+                # Get value based on version
+                if self.version == '2':
+                    setting_value = setting.text
+                else:
+                    # Version 3: try 'value' attribute first, then text
+                    setting_value = setting.get('value')
+                    if setting_value is None:
+                        setting_value = setting.text
+                    if setting_value == '':
+                        setting_value = None
+
+                settings_dict[setting_id] = setting_value
+                logging.debug('Config setting: %s = %s', setting_id, setting_value)
+
+                # Track valid vs deprecated settings
+                if setting_id in self.VALID_SETTINGS:
+                    valid_settings[setting_id] = setting_value
+                elif setting_id.startswith('desc') and re.match(r'desc[0-9]{2}', setting_id):
+                    deprecated_settings.append(f'{setting_id} (deprecated custom formatting)')
+                elif setting_id == 'useragent':
+                    deprecated_settings.append(f'{setting_id} (deprecated)')
+                else:
+                    deprecated_settings.append(f'{setting_id} (unknown)')
+                    logging.warning('Unknown configuration setting: %s = %s', setting_id, setting_value)
+
+            # Clean configuration if deprecated settings found
+            if deprecated_settings:
+                self._clean_config_file(valid_settings, deprecated_settings)
+
+            # Process settings with type conversion
+            self._process_settings(valid_settings)
 
         except ET.ParseError as e:
-            logging.error('Failed to parse XML configuration file: %s', e)
-            return False
+            logging.error('Cannot parse configuration file %s: %s', self.config_file, e)
+            raise
         except Exception as e:
-            logging.exception('Exception loading XML settings: %s', str(e))
+            logging.error('Error reading configuration file %s: %s', self.config_file, e)
+            raise
+
+    def _process_settings(self, settings_dict: Dict[str, str]):
+        """Process and type-convert settings"""
+        for setting_id, setting_value in settings_dict.items():
+            if setting_id in self.VALID_SETTINGS:
+                expected_type = self.VALID_SETTINGS[setting_id]
+
+                if expected_type == bool:
+                    self.settings[setting_id] = self._parse_boolean(setting_value)
+                elif expected_type == str:
+                    self.settings[setting_id] = setting_value if setting_value is not None else ''
+                else:
+                    self.settings[setting_id] = setting_value
+
+                logging.debug('Processed setting: %s = %s (%s)',
+                            setting_id, self.settings[setting_id], expected_type.__name__)
+
+    def _parse_boolean(self, value: Any) -> bool:
+        """Parse boolean values from configuration"""
+        if value is None:
             return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return bool(value)
 
-    def merge_environment_settings(self):
-        """
-        Merge environment settings with XML file settings
-        """
-        # Main parameters from environment or XML
-        zipcode = os.environ.get('ZipCode') or self.settings_dict.get('zipcode')
-        days = os.environ.get('Days') or self.settings_dict.get('days', '1')
-        lineup = self.settings_dict.get('lineup')
-        lineupcode = self.settings_dict.get('lineupcode')
-        device = self.settings_dict.get('device', '-')
-        redays = self.settings_dict.get('redays', '1')
+    def _validate_config(self):
+        """Validate required configuration settings"""
+        # Check required zipcode
+        if not self.settings.get('zipcode'):
+            logging.error('Zipcode is required but not found in configuration')
+            logging.error('Available settings: %s', list(self.settings.keys()))
+            raise ValueError('Missing required zipcode in configuration')
 
-        # Update configuration
-        self.config.update({
-            'zipcode': zipcode,
-            'days': days,
-            'lineup': lineup,
-            'lineupcode': lineupcode,
-            'device': device,
-            'redays': redays,
-            'stationList': self.settings_dict.get('slist'),
-            'tvhmatch': self.settings_dict.get('tvhmatch', 'false'),
-            'xdesc': self.settings_dict.get('xdesc', 'false'),
-            'xdetails': self.settings_dict.get('xdetails', 'false'),
-            'epicon': self.settings_dict.get('epicon', '1'),
-            'epgenre': self.settings_dict.get('epgenre', '0'),
-            'stitle': self.settings_dict.get('stitle', 'false'),
-            'useragent': self.settings_dict.get('useragent',
-                                               'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0'),
-            'cacheDir': os.path.join(self.userdata, os.environ.get('CacheDir', 'cache'))
-        })
+    def _set_defaults(self):
+        """Set default values for missing settings"""
+        defaults = {
+            'lineupcode': 'lineupId',
+            'device': '-',
+            'days': '1',
+            'redays': '1',
+            'lineup': 'Local Over the Air Broadcast',
+            'slist': '',
+            'stitle': False,
+            'xdetails': True,
+            'xdesc': True,
+            'epgenre': '3',
+            'epicon': '1',
+            'tvhoff': True,
+            'usern': '',
+            'passw': '',
+            'tvhurl': '127.0.0.1',
+            'tvhport': '9981',
+            'tvhmatch': True,
+            'chmatch': True,
+        }
 
-        # Validate postal code
-        if not zipcode:
-            logging.error('Critical configuration missing: zipcode')
-            return False
+        for key, default_value in defaults.items():
+            if key not in self.settings or self.settings[key] is None:
+                self.settings[key] = default_value
+                logging.debug('Set default: %s = %s', key, default_value)
 
-        return True
+    def _clean_config_file(self, valid_settings: Dict[str, str], deprecated_list: List[str]):
+        """Clean configuration file by removing deprecated settings"""
+        try:
+            if not deprecated_list:
+                logging.debug('No deprecated settings found - configuration file is clean')
+                return
 
-    def detect_country(self):
-        """
-        Detect country based on postal code
+            # Create backup
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = f"{self.config_file}.backup.{timestamp}"
+            shutil.copy2(self.config_file, backup_file)
+            logging.info('Created configuration backup: %s', backup_file)
 
-        Returns:
-            str: Country code ('USA' or 'CAN')
-        """
-        zipcode = self.config.get('zipcode', '')
+            # Write cleaned configuration
+            self._write_clean_config(valid_settings)
 
-        if zipcode and zipcode.isdigit():
-            country = 'USA'
-            logging.info('\tCountry: United States of America [%s]', country)
-            logging.info('\tZIP code: %s', zipcode)
-        elif zipcode:
-            country = 'CAN'
-            logging.info('\tCountry: Canada [%s]', country)
-            logging.info('\tPostal code: %s', zipcode)
+            logging.info('Configuration cleaned successfully')
+            logging.info('  Removed %d deprecated/unknown settings: %s',
+                        len(deprecated_list), ', '.join(deprecated_list))
+            logging.info('  Kept %d valid settings', len(valid_settings))
+
+        except Exception as e:
+            logging.error('Error cleaning configuration file: %s', str(e))
+            logging.error('Continuing with existing configuration...')
+
+    def _write_clean_config(self, valid_settings: Dict[str, str]):
+        """Write cleaned configuration file"""
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n')
+            f.write(f'<settings version="{self.version or "3"}">\n')
+
+            # Write settings in preferred order
+            for setting_id in self.SETTINGS_ORDER:
+                if setting_id in valid_settings:
+                    value = valid_settings[setting_id]
+                    if value is not None and str(value).strip():
+                        f.write(f'  <setting id="{setting_id}">{value}</setting>\n')
+                    else:
+                        f.write(f'  <setting id="{setting_id}"></setting>\n')
+
+            # Write any remaining settings not in ordered list
+            for setting_id, value in valid_settings.items():
+                if setting_id not in self.SETTINGS_ORDER:
+                    if value is not None and str(value).strip():
+                        f.write(f'  <setting id="{setting_id}">{value}</setting>\n')
+                    else:
+                        f.write(f'  <setting id="{setting_id}"></setting>\n')
+
+            f.write('</settings>\n')
+
+    def get_country(self) -> str:
+        """Determine country from zipcode format"""
+        zipcode = self.settings.get('zipcode', '')
+        if zipcode.isdigit():
+            return 'USA'
         else:
-            country = 'USA'  # Default
+            return 'CAN'
 
-        self.config['country'] = country
-        return country
+    def needs_extended_download(self) -> bool:
+        """Determine if extended details download is needed"""
+        return self.settings.get('xdetails', False) or self.settings.get('xdesc', False)
 
-    def calculate_offset(self):
-        """
-        Calculate time offset
+    def get_station_list(self) -> Optional[List[str]]:
+        """Get explicit station list if configured"""
+        slist = self.settings.get('slist', '')
+        if slist and slist.strip():
+            return [s.strip() for s in slist.split(',') if s.strip()]
+        return None
 
-        Returns:
-            float: Offset in days
-        """
-        offset = 0.0
-        if "Offset" in os.environ:
-            try:
-                offset = float(os.environ.get('Offset'))
-            except ValueError:
-                offset = 0.0
+    def log_config_summary(self):
+        """Log configuration summary"""
+        logging.info('Configuration values processed:')
+        logging.info('  zipcode: %s', self.settings.get('zipcode'))
+        logging.info('  lineup: %s', self.settings.get('lineup'))
+        logging.info('  xdetails (download extended data): %s', self.settings.get('xdetails'))
+        logging.info('  xdesc (use extended descriptions): %s', self.settings.get('xdesc'))
 
-        self.config['offset'] = offset
-        return offset
+        # Log configuration logic
+        xdetails = self.settings.get('xdetails', False)
+        xdesc = self.settings.get('xdesc', False)
 
-    def setup_tvheadend_config(self, tvh_match_dict):
-        """
-        Configure TVHeadend integration
-
-        Args:
-            tvh_match_dict: TVHeadend channels dictionary
-        """
-        if self.settings_dict.get('tvhmatch') == 'true' and len(tvh_match_dict) > 0:
-            tvh_channel_numbers = list(tvh_match_dict.keys())
-            logging.info('TVHeadend integration ACTIVE with %d channels', len(tvh_channel_numbers))
-            self.config['use_tvh_filter'] = True
-            self.config['tvh_channels'] = tvh_channel_numbers
-            self.config['tvhmatch'] = 'true'
+        if xdesc and not xdetails:
+            logging.info('xdesc=true detected - automatically enabling extended details download')
+        elif xdetails and not xdesc:
+            logging.info('xdetails=true - downloading extended data but using basic descriptions')
+        elif xdetails and xdesc:
+            logging.info('Both xdetails and xdesc enabled - full extended functionality')
         else:
-            logging.info('TVHeadend integration DISABLED')
-            self.config['use_tvh_filter'] = False
-            self.config['tvhmatch'] = 'false'
-
-    def get_config(self):
-        """
-        Return complete configuration
-
-        Returns:
-            dict: Configuration
-        """
-        return self.config.copy()
-
-    def get_setting(self, key, default=None):
-        """
-        Get specific setting
-
-        Args:
-            key: Setting key
-            default: Default value
-
-        Returns:
-            Setting value
-        """
-        return self.config.get(key, default)
-
-    def get_xml_setting(self, key, default=None):
-        """
-        Get setting from XML settings
-
-        Args:
-            key: Setting key
-            default: Default value
-
-        Returns:
-            Setting value
-        """
-        return self.settings_dict.get(key, default)
-
-    def log_configuration(self):
-        """
-        Display configuration in logs
-        """
-        logging.info('Configuration loaded successfully')
-        logging.info('Environment variables:')
-        for var in ['ConfFile', 'ZipCode', 'Days', 'Offset', 'CacheDir', 'ConfDir', 'XMLTV']:
-            logging.info('  %s: %s', var, os.environ.get(var))
-
-        logging.info('Configuration parameters:')
-        logging.info('\tTV Guide duration: %s days', self.config.get('days'))
-        logging.info('\tLineup: %s', self.config.get('lineup'))
-        logging.info('\tUser-Agent: %s', self.config.get('useragent')[:50] + '...')
-        logging.info('\tCaching directory path: %s', self.config.get('cacheDir'))
-        logging.info('\tTVHeadend integration: %s', self.config.get('tvhmatch'))
-
-
-def create_config_manager(userdata_dir: str) -> GracenoteEPGConfig:
-    """
-    Factory function to create a configuration manager
-
-    Args:
-        userdata_dir: User data directory
-
-    Returns:
-        GracenoteEPGConfig instance
-    """
-    return GracenoteEPGConfig(userdata_dir)
-
-
-def validate_environment_quick():
-    """
-    Quick validation of critical environment variables
-
-    Returns:
-        bool: True if environment is valid
-    """
-    critical_vars = ['ConfFile']
-    for var in critical_vars:
-        if not os.environ.get(var):
-            logging.error('Critical environment variable %s is not set', var)
-            return False
-    return True
+            logging.info('Extended features disabled - using basic guide data only')
