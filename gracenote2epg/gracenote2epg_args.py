@@ -32,13 +32,20 @@ class ArgumentParser:
             epilog="""
 Examples:
   gracenote2epg --capabilities
-  gracenote2epg --days 7 --zip 92101 --debug
-  gracenote2epg --days 3 --postal J3B1M4 --quiet --output guide.xml
+  gracenote2epg --days 7 --zip 92101
+  gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
 
 Configuration:
   Default config: ~/gracenote2epg/conf/gracenote2epg.xml
   Default cache:  ~/gracenote2epg/cache/
   Default logs:   ~/gracenote2epg/log/
+
+Logging Levels:
+  (default)       Info, warnings and errors to file only, XML to console
+  --warning       Only warnings and errors to file, XML to console
+  --debug         All debug information to file only, XML to console
+  --console       Display active log level to console (can combine with --warning/--debug)
+  --quiet         No console output except XML, logs to file only
             """
         )
 
@@ -61,16 +68,32 @@ Configuration:
             help='Show capabilities and exit'
         )
 
-        parser.add_argument(
-            '--quiet', '-q',
+        # Log level selection (can be combined with --console)
+        level_group = parser.add_mutually_exclusive_group()
+        level_group.add_argument(
+            '--warning', '-w',
             action='store_true',
-            help='Suppress progress information (errors only)'
+            help='Only warnings and errors to file'
         )
 
-        parser.add_argument(
+        level_group.add_argument(
             '--debug',
             action='store_true',
-            help='Enable debug logging with detailed statistics'
+            help='All debug information to file (very verbose)'
+        )
+
+        # Console output control (mutually exclusive)
+        console_group = parser.add_mutually_exclusive_group()
+        console_group.add_argument(
+            '--console',
+            action='store_true',
+            help='Display active log level to console (can combine with --warning/--debug)'
+        )
+
+        console_group.add_argument(
+            '--quiet', '-q',
+            action='store_true',
+            help='No console output except XML, logs to file only'
         )
 
         # Output control
@@ -191,6 +214,26 @@ Configuration:
 
         # Clean up individual fields
         del args.zip, args.postal, args.code
+
+    def get_logging_config(self, args):
+        """Determine logging configuration from arguments"""
+        config = {
+            'level': 'default',  # default, warning, debug
+            'console': False,    # whether to show logs on console
+            'quiet': False       # whether to suppress all console output except XML
+        }
+
+        if args.debug:
+            config['level'] = 'debug'
+        elif args.warning:
+            config['level'] = 'warning'
+
+        if args.console:
+            config['console'] = True
+        elif args.quiet:
+            config['quiet'] = True
+
+        return config
 
     def get_system_defaults(self):
         """Get system-specific default directories"""

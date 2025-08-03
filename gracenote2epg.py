@@ -4,8 +4,6 @@ gracenote2epg - North America TV Guide Grabber
 
 A modular Python implementation for downloading TV guide data from
 tvlistings.gracenote.com with intelligent caching and TVheadend integration.
-
-Based on tv_grab_zap2epg v4.0 with simplified cache management.
 """
 
 import logging
@@ -26,37 +24,45 @@ from gracenote2epg import (
 )
 
 
-def setup_logging(debug: bool, log_file: Path, quiet: bool):
-    """Setup logging configuration"""
+def setup_logging(logging_config: dict, log_file: Path):
+    """Setup logging configuration according to specified levels"""
     # Create log directory
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Set logging level
-    log_level = logging.DEBUG if debug else logging.INFO
+    # Determine file logging level based on mode
+    if logging_config['level'] == 'warning':
+        file_level = logging.WARNING
+    elif logging_config['level'] == 'debug':
+        file_level = logging.DEBUG
+    else:  # default
+        file_level = logging.INFO
 
-    # Configure logging
+    # Configure file logging
     logging.basicConfig(
         filename=log_file,
         filemode='a',
-        format='%(asctime)s %(message)s',
+        format='%(asctime)s %(levelname)-8s %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
-        level=log_level
+        level=file_level,
+        force=True  # Override any existing configuration
     )
 
-    # Also log to console unless quiet
-    if not quiet:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+    # Console logging only if --console is specified (and not --quiet)
+    # IMPORTANT: Use stderr to avoid polluting XML output on stdout
+    if logging_config['console'] and not logging_config['quiet']:
+        console_handler = logging.StreamHandler(sys.stderr)  # Force stderr for console output
+
+        # Set console level to match file level
+        if logging_config['level'] == 'warning':
+            console_handler.setLevel(logging.WARNING)
+        elif logging_config['level'] == 'debug':
+            console_handler.setLevel(logging.DEBUG)
+        else:  # default
+            console_handler.setLevel(logging.INFO)
+
         formatter = logging.Formatter('%(levelname)s: %(message)s')
         console_handler.setFormatter(formatter)
         logging.getLogger().addHandler(console_handler)
-
-    if debug:
-        logging.info('Debug logging enabled - verbose output will be shown')
-
-    # Add session separator in log
-    logging.info('=' * 60)
-    logging.info('gracenote2epg session started - Version %s', __version__)
 
 
 def main():
@@ -82,7 +88,17 @@ def main():
             directory.mkdir(parents=True, exist_ok=True)
 
         # Setup logging
-        setup_logging(args.debug, log_file, args.quiet)
+        logging_config = arg_parser.get_logging_config(args)
+        setup_logging(logging_config, log_file)
+
+        # Add session separator in log
+        logging.info('=' * 60)
+        logging.info('gracenote2epg session started - Version %s', __version__)
+
+        if logging_config['level'] == 'debug':
+            logging.info('Debug logging enabled - all debug information will be logged')
+        if logging_config['console']:
+            logging.info('Console logging enabled - logs also displayed on stderr')
 
         # Load and validate configuration
         config_manager = ConfigManager(config_file)
@@ -92,6 +108,7 @@ def main():
         )
 
         # Log configuration summary
+        logging.info('Configuration loaded from: %s', config_file)
         config_manager.log_config_summary()
 
         # Initialize components
@@ -127,21 +144,20 @@ def main():
 
         # Log guide parameters
         country = config_manager.get_country()
-        logging.info('\tCountry: %s [%s]',
+        logging.info('Country: %s [%s]',
                     'United States of America' if country == 'USA' else 'Canada', country)
-        logging.info('\tLocation code: %s', config.get('zipcode'))
-        logging.info('\tTV Guide duration: %s days', days)
+        logging.info('Location code: %s', config.get('zipcode'))
+        logging.info('TV Guide duration: %s days', days)
 
         if offset > 1:
-            logging.info('\tTV Guide Start: %i [offset: %i days]', grid_time_start, int(offset))
+            logging.info('TV Guide Start: %i [offset: %i days]', grid_time_start, int(offset))
         elif offset == 1:
-            logging.info('\tTV Guide Start: %i [offset: %i day]', grid_time_start, int(offset))
+            logging.info('TV Guide Start: %i [offset: %i day]', grid_time_start, int(offset))
         else:
-            logging.info('\tTV Guide Start: %i', grid_time_start)
+            logging.info('TV Guide Start: %i', grid_time_start)
 
-        logging.info('\tLineup: %s', config.get('lineup'))
-        logging.info('\tConfiguration file: %s', config_file)
-        logging.info('\tCaching directory: %s', defaults['cache_dir'])
+        logging.info('Lineup: %s', config.get('lineup'))
+        logging.info('Caching directory: %s', defaults['cache_dir'])
 
         # Perform initial cache cleanup
         cache_manager.perform_initial_cleanup(grid_time_start, days, xmltv_file)
@@ -206,13 +222,19 @@ def main():
             logging.info('  WAF blocks encountered: %d', final_stats['waf_blocks'])
             logging.info('  Final delay: %.2fs', final_stats['current_delay'])
 
-            # Output XMLTV to stdout if not quiet
-            if not args.quiet:
+            # Output XMLTV to stdout ONLY if not redirected to file
+            # XMLTV standard: XML goes to stdout, logs go to stderr or file
+            if args.output is None:
+                # Pas de --output spécifié, afficher le XML sur stdout
                 try:
                     with open(xmltv_file, 'r', encoding='utf-8') as f:
-                        print(f.read())
+                        print(f.read(), end='')  # end='' pour éviter une ligne vide supplémentaire
                 except Exception as e:
-                    logging.warning('Could not output XMLTV to stdout: %s', str(e))
+                    logging.error('Could not output XMLTV to stdout: %s', str(e))
+                    return 1
+            else:
+                # --output spécifié, le XML est dans le fichier
+                logging.info('XMLTV output written to: %s', args.output)
 
         logging.info('Script completed successfully')
         logging.info('gracenote2epg session ended successfully')

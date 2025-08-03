@@ -3,11 +3,9 @@ gracenote2epg - North America TV Guide Grabber
 
 A modular Python implementation for downloading TV guide data from
 tvlistings.gracenote.com with intelligent caching and TVheadend integration.
-
-Originally based on tv_grab_zap2epg v4.0 with simplified cache management.
 """
 
-__version__ = "4.0.0"
+__version__ = "1.0"
 __author__ = "th0ma7"
 __license__ = "GPL-3.0"
 
