@@ -2,11 +2,12 @@
 
 A modular Python implementation for downloading TV guide data from tvlistings.gracenote.com with intelligent caching and TVheadend integration.
 
-**Based on tv_grab_zap2epg v4.0** - Converted to pure Python with modular architecture.
+**Originally designed for Kodi/TVheadend integration** - This is a complete Python rewrite of the original zap2epg grabber.
 
 ## Key Features
 
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
+- **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
 - **🧠 Intelligent Cache Management**: Preserves existing data and only downloads what's needed
 - **⚡ Smart Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
 - **💾 Automatic XMLTV Backup**: Safe backup system with retention management
@@ -47,11 +48,14 @@ pip install requests>=2.25.0
 # Show capabilities
 gracenote2epg --capabilities
 
-# Download 7 days of guide data
-gracenote2epg --days 7 --zip 92101 --debug
+# Download 7 days of guide data (XML to stdout, logs to file)
+gracenote2epg --days 7 --zip 92101
+
+# With console logging (logs to stderr + file)
+gracenote2epg --days 7 --zip 92101 --console
 
 # Use Canadian postal code
-gracenote2epg --days 3 --postal J3B1M4 --quiet
+gracenote2epg --days 3 --postal J3B1M4 --warning --console
 ```
 
 ### Module Usage
@@ -72,6 +76,60 @@ The script auto-creates a default configuration file on first run:
 - **Raspberry Pi**: `~/script.module.zap2epg/epggrab/conf/gracenote2epg.xml` (if exists)
 - **Synology DSM7**: `/var/packages/tvheadend/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
 - **Synology DSM6**: `/var/packages/tvheadend/target/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
+
+## Logging Levels
+
+The grabber follows XMLTV standards with XML output to `stdout` and configurable logging:
+
+### Log Level Options (mutually exclusive):
+- **Default**: INFO+WARNING+ERROR to file
+- **`--warning`**: Only WARNING+ERROR to file  
+- **`--debug`**: All DEBUG+INFO+WARNING+ERROR to file (very verbose)
+
+### Console Output Options (mutually exclusive):
+- **Default**: File logging only, XML to stdout
+- **`--console`**: Display active log level to stderr + file
+- **`--quiet`**: File logging only (explicit)
+
+### Examples:
+
+```bash
+# Standard: XML to stdout, logs to file only
+gracenote2epg --days 7 --zip 92101
+
+# With console output: XML to stdout, logs to stderr + file
+gracenote2epg --days 7 --zip 92101 --console
+
+# Save XML to custom file instead of stdout
+gracenote2epg --days 7 --zip 92101 --output guide.xml
+
+# Custom file with console logs visible
+gracenote2epg --days 7 --zip 92101 --output guide.xml --console
+```
+
+**Note**: When using `--output filename`, the XML is written to the specified file instead of stdout, and the default cache/xmltv.xml is replaced by your custom filename.
+
+### Complete Examples with Logging Levels:
+
+```bash
+# Default logging: INFO+WARNING+ERROR to file, XML to stdout
+gracenote2epg --days 7 --zip 92101
+
+# Console output: same logs to stderr + file, XML to stdout  
+gracenote2epg --days 7 --zip 92101 --console
+
+# Warnings only: WARNING+ERROR to file, XML to stdout
+gracenote2epg --days 7 --zip 92101 --warning
+
+# Warnings with console: WARNING+ERROR to stderr + file
+gracenote2epg --days 7 --zip 92101 --warning --console
+
+# Debug mode: ALL logs to file, XML to stdout
+gracenote2epg --days 7 --zip 92101 --debug
+
+# Debug with console: ALL logs to stderr + file (very verbose)
+gracenote2epg --days 7 --zip 92101 --debug --console
+```
 
 ## Architecture
 
@@ -98,6 +156,7 @@ gracenote2epg.xml                  # Configuration file template
 - XMLTV baseline capabilities compliance
 - System-specific directory auto-detection
 - Input validation and normalization
+- Flexible logging configuration
 
 #### ⚙️ ConfigManager (`gracenote2epg_config.py`)
 - XML configuration parsing and validation
@@ -200,8 +259,15 @@ Guide download completed:
 gracenote2epg --description       # Show grabber description
 gracenote2epg --version          # Show version
 gracenote2epg --capabilities     # Show capabilities
-gracenote2epg --quiet            # Suppress progress information
-gracenote2epg --debug            # Enable debug logging
+```
+
+### Logging Control
+
+```bash
+gracenote2epg --quiet            # File logging only (explicit)
+gracenote2epg --warning          # Only warnings/errors to file
+gracenote2epg --debug            # All debug info to file
+gracenote2epg --console          # Display logs on stderr too
 ```
 
 ### Guide Parameters
@@ -209,7 +275,7 @@ gracenote2epg --debug            # Enable debug logging
 ```bash
 gracenote2epg --days 7           # Number of days (1-14)
 gracenote2epg --offset 1         # Start tomorrow instead of today
-gracenote2epg --output guide.xml # Redirect output to file
+gracenote2epg --output guide.xml # Save XML to file (replaces default cache/xmltv.xml)
 ```
 
 ### Location Codes
@@ -271,30 +337,31 @@ The modular architecture makes it easy to extend functionality:
 4. **Cache Strategies**: Modify `CacheManager` methods
 5. **TVheadend Features**: Enhance `TvheadendClient`
 
-## Migration from tv_grab_zap2epg
+## Migration from script.module.zap2epg / tv_grab_zap2epg
 
 ### Differences from Original
 
-- **Pure Python**: No bash wrapper required
-- **Modular Design**: Easier to maintain and extend
-- **Same Configuration**: Uses identical XML configuration format
+- **Modular Python Architecture**: Enhanced code organization and maintainability
+- **No Dependencies on Bash**: Pure Python implementation  
+- **Same Configuration**: Uses identical XML configuration format (zap2epg.xml/gracenote2epg.xml)
 - **Same Cache Structure**: Compatible with existing cache files
-- **Enhanced Logging**: More detailed statistics and debugging
+- **Enhanced Logging**: Configurable output with proper stdout/stderr separation
+- **Improved Error Handling**: Better WAF protection and retry logic
 
 ### Migration Steps
 
-1. **Backup existing configuration**: Your `zap2epg.xml` works as-is
+1. **Backup existing configuration**: Your existing `zap2epg.xml` works as-is (rename to `gracenote2epg.xml`)
 2. **Install gracenote2epg**: `pip install .`
-3. **Update scripts**: Replace `tv_grab_zap2epg` with `gracenote2epg`
-4. **Test functionality**: Run with `--debug` to verify operation
+3. **Update scripts**: Replace `tv_grab_zap2epg` calls with `gracenote2epg`
+4. **Test functionality**: Run with `--console` to verify operation
 
 ### Compatibility
 
-- ✅ **Configuration Files**: 100% compatible
-- ✅ **Cache Files**: Reuses existing cache
-- ✅ **XMLTV Output**: Identical format
-- ✅ **TVheadend Integration**: Same API and behavior
-- ✅ **Command-line Arguments**: Same interface
+- ✅ **Configuration Files**: 100% compatible with zap2epg.xml format
+- ✅ **Cache Files**: Reuses existing zap2epg cache structure
+- ✅ **XMLTV Output**: Identical format to original
+- ✅ **TVheadend Integration**: Same API and behavior as original zap2epg
+- ✅ **Command-line Arguments**: Enhanced interface with new logging options
 
 ## Troubleshooting
 
@@ -312,7 +379,7 @@ python -c "import gracenote2epg; print(gracenote2epg.__file__)"
 **Configuration Problems:**
 ```bash
 # Check default config location
-gracenote2epg --debug --days 1
+gracenote2epg --console --days 1
 
 # Use custom config
 gracenote2epg --config-file /path/to/config.xml
@@ -320,8 +387,8 @@ gracenote2epg --config-file /path/to/config.xml
 
 **TVheadend Connection:**
 ```bash
-# Test with debug output
-gracenote2epg --debug --days 1 --zip 92101
+# Test with console output
+gracenote2epg --console --days 1 --zip 92101
 
 # Check TVheadend settings in config.xml
 ```
@@ -331,7 +398,7 @@ gracenote2epg --debug --days 1 --zip 92101
 Enable detailed logging for troubleshooting:
 
 ```bash
-gracenote2epg --debug --days 1 --zip 92101
+gracenote2epg --debug --console --days 1 --zip 92101
 ```
 
 Debug output includes:
@@ -343,18 +410,28 @@ Debug output includes:
 
 ## License
 
-GPL v3 - Same as original tv_grab_zap2epg
+GPL v3 - Same as original script.module.zap2epg project
 
-## Credits
+## Credits & Origins
 
-Based on the excellent work of **edit4ever** on the original **script.module.zap2epg** project. This modular Python version maintains full compatibility while providing enhanced maintainability and extensibility.
+This project was originally designed to be easily setup in Kodi for use as a grabber for TVheadend. This version builds upon edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and adds Python modular architecture.
+
+**Original Sources:**
+- **edit4ever**: Original **script.module.zap2epg** project and Python3 branch
+- **th0ma7**: tv_grab_zap2epg improvements based on PR edit4ever/script.module.zap2epg#37 (much thanks for your great original work @edit4ever !!!)
+
+This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining full compatibility with existing configurations and cache formats.
 
 ## Version History
 
-### 4.0.0
-- **Modular Python Architecture**: Complete rewrite with clean module separation
-- **Enhanced Cache Management**: Intelligent caching with 95%+ efficiency
-- **Improved Error Handling**: Robust downloading and parsing
-- **Better Logging**: Detailed statistics and debugging information
-- **Platform Auto-detection**: Smart directory configuration
-- **Full Backward Compatibility**: Works with existing configurations and cache
+### 1.0 - Initial Release
+- **Python Modularization**: Based on edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and Python modular architecture
+- **Modular Architecture**: Clean module separation for maintainability
+- **XMLTV Standard Compliance**: Proper stdout/stderr separation
+- **Enhanced Cache Management**: Intelligent caching with 95%+ efficiency  
+- **Flexible Logging System**: File-based logging with optional console output
+- **Improved Error Handling**: Robust downloading and parsing with WAF protection
+- **Better Debugging**: Detailed statistics and configurable verbosity
+- **Platform Auto-detection**: Smart directory configuration for Raspberry Pi, Synology, etc.
+- **Full Backward Compatibility**: Works with existing zap2epg configurations and cache
+- **Kodi/TVheadend Integration**: Maintains original design goals for media center use
