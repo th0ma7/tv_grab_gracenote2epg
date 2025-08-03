@@ -30,6 +30,7 @@ class ConfigManager:
   <setting id="stitle">false</setting>
   <setting id="xdetails">true</setting>
   <setting id="xdesc">true</setting>
+  <setting id="langdetect">true</setting>
   <setting id="epgenre">3</setting>
   <setting id="epicon">1</setting>
   <setting id="tvhoff">true</setting>
@@ -60,6 +61,7 @@ class ConfigManager:
         # Extended details
         'xdetails': bool,
         'xdesc': bool,
+        'langdetect': bool,
 
         # Display options
         'epgenre': str,
@@ -78,7 +80,7 @@ class ConfigManager:
     # Settings order for clean output
     SETTINGS_ORDER = [
         'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays',
-        'slist', 'stitle', 'xdetails', 'xdesc', 'epgenre', 'epicon',
+        'slist', 'stitle', 'xdetails', 'xdesc', 'langdetect', 'epgenre', 'epicon',
         'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch'
     ]
 
@@ -87,7 +89,8 @@ class ConfigManager:
         self.settings: Dict[str, Any] = {}
         self.version: str = "3"
 
-    def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None) -> Dict[str, Any]:
+    def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None,
+                    langdetect: Optional[bool] = None) -> Dict[str, Any]:
         """Load and validate configuration file"""
 
         # Create default config if doesn't exist
@@ -105,6 +108,10 @@ class ConfigManager:
         if days:
             self.settings['days'] = str(days)
             logging.info('Using days from command line: %s', days)
+
+        if langdetect is not None:
+            self.settings['langdetect'] = langdetect
+            logging.info('Using langdetect from command line: %s', langdetect)
 
         # Validate required settings
         self._validate_config()
@@ -220,6 +227,9 @@ class ConfigManager:
 
     def _set_defaults(self):
         """Set default values for missing settings"""
+        # Check if langdetect is available for smart default
+        langdetect_available = self._check_langdetect_available()
+
         defaults = {
             'lineupcode': 'lineupId',
             'device': '-',
@@ -230,6 +240,7 @@ class ConfigManager:
             'stitle': False,
             'xdetails': True,
             'xdesc': True,
+            'langdetect': langdetect_available,  # Smart default based on availability
             'epgenre': '3',
             'epicon': '1',
             'tvhoff': True,
@@ -244,7 +255,18 @@ class ConfigManager:
         for key, default_value in defaults.items():
             if key not in self.settings or self.settings[key] is None:
                 self.settings[key] = default_value
-                logging.debug('Set default: %s = %s', key, default_value)
+                if key == 'langdetect':
+                    logging.debug('Set default langdetect: %s (based on availability)', default_value)
+                else:
+                    logging.debug('Set default: %s = %s', key, default_value)
+
+    def _check_langdetect_available(self) -> bool:
+        """Check if langdetect library is available"""
+        try:
+            import langdetect
+            return True
+        except ImportError:
+            return False
 
     def _clean_config_file(self, valid_settings: Dict[str, str], deprecated_list: List[str]):
         """Clean configuration file by removing deprecated settings"""
@@ -322,10 +344,12 @@ class ConfigManager:
         logging.info('  lineup: %s', self.settings.get('lineup'))
         logging.info('  xdetails (download extended data): %s', self.settings.get('xdetails'))
         logging.info('  xdesc (use extended descriptions): %s', self.settings.get('xdesc'))
+        logging.info('  langdetect (automatic language detection): %s', self.settings.get('langdetect'))
 
         # Log configuration logic
         xdetails = self.settings.get('xdetails', False)
         xdesc = self.settings.get('xdesc', False)
+        langdetect = self.settings.get('langdetect', False)
 
         if xdesc and not xdetails:
             logging.info('xdesc=true detected - automatically enabling extended details download')
@@ -335,3 +359,8 @@ class ConfigManager:
             logging.info('Both xdetails and xdesc enabled - full extended functionality')
         else:
             logging.info('Extended features disabled - using basic guide data only')
+
+        if langdetect:
+            logging.info('Language detection enabled - will auto-detect French/English/Spanish')
+        else:
+            logging.info('Language detection disabled - all content will be marked as English')

@@ -34,6 +34,7 @@ Examples:
   gracenote2epg --capabilities
   gracenote2epg --days 7 --zip 92101
   gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
+  gracenote2epg --days 7 --zip 92101 --langdetect false
 
 Configuration:
   Default config: ~/gracenote2epg/conf/gracenote2epg.xml
@@ -46,6 +47,10 @@ Logging Levels:
   --debug         All debug information to file only, XML to console
   --console       Display active log level to console (can combine with --warning/--debug)
   --quiet         No console output except XML, logs to file only
+
+Language Detection:
+  --langdetect    Enable/disable automatic language detection (requires langdetect library)
+                  Default: auto-enabled if langdetect is installed, disabled otherwise
             """
         )
 
@@ -116,6 +121,14 @@ Logging Levels:
             help='Start with data for day today plus X days'
         )
 
+        # Language detection
+        parser.add_argument(
+            '--langdetect',
+            type=str,
+            choices=['true', 'false'],
+            help='Enable/disable automatic language detection (requires langdetect library)'
+        )
+
         # Location codes
         location_group = parser.add_mutually_exclusive_group()
         location_group.add_argument(
@@ -175,6 +188,9 @@ Logging Levels:
         # Normalize location codes
         self._normalize_location(args)
 
+        # Normalize langdetect option
+        self._normalize_langdetect(args)
+
         return args
 
     def _validate_args(self, args):
@@ -214,6 +230,13 @@ Logging Levels:
 
         # Clean up individual fields
         del args.zip, args.postal, args.code
+
+    def _normalize_langdetect(self, args):
+        """Normalize langdetect option"""
+        if args.langdetect:
+            args.langdetect = args.langdetect.lower() == 'true'
+        else:
+            args.langdetect = None  # Use config default
 
     def get_logging_config(self, args):
         """Determine logging configuration from arguments"""

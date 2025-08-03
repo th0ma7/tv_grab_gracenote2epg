@@ -104,7 +104,8 @@ def main():
         config_manager = ConfigManager(config_file)
         config = config_manager.load_config(
             location_code=args.location_code,
-            days=args.days
+            days=args.days,
+            langdetect=args.langdetect  # ← AJOUTER CETTE LIGNE
         )
 
         # Log configuration summary

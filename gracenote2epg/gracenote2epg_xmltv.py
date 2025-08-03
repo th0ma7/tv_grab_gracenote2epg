@@ -55,11 +55,38 @@ class XmltvGenerator:
         # Language statistics
         self.language_stats = {'fr': 0, 'en': 0, 'es': 0}
 
+        # Language detection will be configured per generation call
+        self.langdetect_enabled = False
+        self.langdetect_available = False
+
+    def _check_langdetect_availability(self) -> bool:
+        """Check if langdetect library is available"""
+        try:
+            from langdetect import detect
+            return True
+        except ImportError:
+            return False
+
     def generate_xmltv(self, schedule: Dict, config: Dict[str, Any],
                        xmltv_file: Path) -> bool:
         """Generate XMLTV file with automatic backup"""
         try:
             logging.info('=== XMLTV Generation ===')
+
+            # Configure language detection based on config and availability
+            self.langdetect_available = self._check_langdetect_availability()
+            self.langdetect_enabled = config.get('langdetect', True)  # Default to True if not specified
+
+            # Log language detection configuration
+            if self.langdetect_enabled and self.langdetect_available:
+                logging.info('Language detection: Using langdetect library (enhanced accuracy)')
+            elif self.langdetect_enabled and not self.langdetect_available:
+                logging.warning('Language detection: langdetect requested but not available')
+                logging.warning('  Please install langdetect: pip install langdetect')
+                logging.info('Language detection: Disabled - defaulting to English for all content')
+                self.langdetect_enabled = False
+            else:
+                logging.info('Language detection: Disabled by configuration - defaulting to English')
 
             # Always backup existing XMLTV
             self.cache_manager.backup_xmltv(xmltv_file)
@@ -87,67 +114,34 @@ class XmltvGenerator:
             return False
 
     def _detect_language(self, text: str) -> str:
-        """Detect language from text content with improved detection"""
+        """Detect language from text content using langdetect only"""
         if not text or not isinstance(text, str):
             return 'en'
 
-        text_lower = text.lower()
-
-        # French indicators - enhanced with more patterns
-        french_words = [
-            # Common grammatical words
-            'le ', 'la ', 'les ', 'un ', 'une ', 'des ', 'du ', 'de la ', 'dans ', 'avec ', 'pour ', 'sur ', 'par ',
-            'qui ', 'que ', 'où ', 'ça ', 'c\'est', 'il ', 'elle ', 'ils ', 'elles ', 'nous ', 'vous ',
-            'leur ', 'leurs ', 'son ', 'sa ', 'ses ', 'mon ', 'ma ', 'mes ', 'ton ', 'ta ', 'tes',
-            # Common French words
-            'est ', 'sont ', 'était ', 'être ', 'avoir ', 'fait ', 'faire ', 'dit ', 'dire ',
-            'ceci ', 'cela ', 'cette ', 'ces ', 'tout ', 'tous ', 'toute ', 'toutes ',
-            # French-specific patterns
-            'tion ', 'sion ', 'ment ', 'ence ', 'ance ', 'ique ', 'oire ', 'aire ',
-            # Canadian French TV terms
-            'nouvelles', 'émission', 'publicitaire', 'payée', 'information', 'régionale', 'nationale', 'internationale'
-        ]
-
-        # French endings and patterns
-        french_patterns = [
-            'tion', 'sion', 'ment', 'ence', 'ance', 'ique', 'oire', 'aire', 'ité', 'été', 'ée'
-        ]
-
-        french_score = sum(1 for word in french_words if word in text_lower)
-
-        # Check for French word endings
-        for pattern in french_patterns:
-            if text_lower.endswith(pattern):
-                french_score += 1
-
-        # Spanish indicators
-        spanish_words = [
-            'el ', 'la ', 'los ', 'las ', 'un ', 'una ', 'unos ', 'unas ', 'de ', 'del ', 'en ', 'con ',
-            'por ', 'para ', 'que ', 'y ', 'o ', 'si ', 'no ', 'sí ', 'él ', 'ella ', 'ellos ', 'ellas ',
-            'su ', 'sus ', 'mi ', 'mis ', 'tu ', 'tus ', 'nuestro ', 'nuestra'
-        ]
-        spanish_score = sum(1 for word in spanish_words if word in text_lower)
-
-        # English indicators
-        english_words = [
-            'the ', 'and ', 'or ', 'but ', 'in ', 'on ', 'at ', 'to ', 'for ', 'of ', 'with ', 'by ',
-            'from ', 'up ', 'about ', 'into ', 'through ', 'during ', 'before ', 'after ', 'above ',
-            'below ', 'between ', 'among ', 'this ', 'that ', 'these ', 'those'
-        ]
-        english_score = sum(1 for word in english_words if word in text_lower)
-
-        # Adjusted scoring system - lower threshold for French detection
-        logging.debug('Language detection for "%s": FR=%d, ES=%d, EN=%d',
-                     text[:50], french_score, spanish_score, english_score)
-
-        if french_score >= 1 and french_score > spanish_score and french_score >= english_score:
-            logging.debug('Detected language: French')
-            return 'fr'
-        elif spanish_score >= 2 and spanish_score > french_score and spanish_score > english_score:
-            logging.debug('Detected language: Spanish')
-            return 'es'
+        # Only use langdetect if both available and enabled
+        if self.langdetect_enabled and self.langdetect_available:
+            try:
+                from langdetect import detect, LangDetectException
+                try:
+                    detected = detect(text)
+                    # Map langdetect codes to our supported languages
+                    if detected in ['fr', 'en', 'es']:
+                        logging.debug('Language detected: %s for "%s"', detected, text[:50])
+                        return detected
+                    else:
+                        # Unsupported language, default to English
+                        logging.debug('Unsupported language "%s" detected, defaulting to English', detected)
+                        return 'en'
+                except LangDetectException:
+                    # langdetect failed (text too short, ambiguous, etc.)
+                    logging.debug('langdetect failed for text "%s", defaulting to English', text[:50])
+                    return 'en'
+            except ImportError:
+                # This shouldn't happen since we checked availability, but just in case
+                logging.debug('langdetect import error, defaulting to English')
+                return 'en'
         else:
-            logging.debug('Detected language: English (default)')
+            # Language detection disabled - default to English
             return 'en'
 
     def _get_translated_term(self, term: str, language: str) -> str:
@@ -418,11 +412,14 @@ class XmltvGenerator:
             # Log language statistics
             total_episodes = sum(self.language_stats.values())
             if total_episodes > 0:
-                logging.info('Language detection statistics:')
-                for lang, count in self.language_stats.items():
-                    percentage = (count / total_episodes) * 100
-                    lang_name = {'fr': 'French', 'en': 'English', 'es': 'Spanish'}[lang]
-                    logging.info('  %s: %d episodes (%.1f%%)', lang_name, count, percentage)
+                if self.langdetect_enabled:
+                    logging.info('Language detection statistics (using langdetect library):')
+                    for lang, count in self.language_stats.items():
+                        percentage = (count / total_episodes) * 100
+                        lang_name = {'fr': 'French', 'en': 'English', 'es': 'Spanish'}[lang]
+                        logging.info('  %s: %d episodes (%.1f%%)', lang_name, count, percentage)
+                else:
+                    logging.info('Language detection disabled - all content marked as English')
 
             # Report missing descriptions
             if missing_desc_count > 0:
@@ -457,27 +454,27 @@ class XmltvGenerator:
                     tz_offset_seconds = (time.altzone if is_dst else time.timezone)
                     orig_date = int(episode_data['epoad']) + tz_offset_seconds
                     premiere_date = datetime.fromtimestamp(orig_date).strftime('%Y-%m-%d')
-                    premiered_text = self._get_translated_term('premiered', detected_language)
+                    premiered_text = self._get_translated_term('premiered', language)
                     additional_info.append(f"{premiered_text}: {premiere_date}")
                 except (ValueError, TypeError, OSError):
                     pass
 
             # Add rating if available
             if episode_data.get('eprating') and str(episode_data['eprating']).strip():
-                rated_text = self._get_translated_term('rated', detected_language)
+                rated_text = self._get_translated_term('rated', language)
                 additional_info.append(f"{rated_text}: {episode_data['eprating']}")
 
             # Add flags with translations
             flags = []
             if episode_data.get('epflag') and isinstance(episode_data['epflag'], (list, tuple)):
                 if 'New' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('new', detected_language))
+                    flags.append(self._get_translated_term('new', language))
                 if 'Live' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('live', detected_language))
+                    flags.append(self._get_translated_term('live', language))
                 if 'Premiere' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('premiere', detected_language))
+                    flags.append(self._get_translated_term('premiere', language))
                 if 'Finale' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('finale', detected_language))
+                    flags.append(self._get_translated_term('finale', language))
 
             if episode_data.get('eptags') and isinstance(episode_data['eptags'], (list, tuple)):
                 if 'CC' in episode_data['eptags']:
@@ -486,7 +483,7 @@ class XmltvGenerator:
                     flags.append('HD')
 
             if flags:
-                additional_info.append(' | '.join(flags))  # Ajouter des "|" entre les flags
+                additional_info.append(' | '.join(flags))
 
             # Combine with line break for better Kodi display
             if additional_info:
@@ -595,7 +592,7 @@ class XmltvGenerator:
                     flags.append('HD')
 
             if flags:
-                additional_info.append(' | '.join(flags))  # Ajouter des "|" entre les flags
+                additional_info.append(' | '.join(flags))
 
             # Combine with line break for better Kodi display
             if additional_info:

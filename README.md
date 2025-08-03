@@ -21,47 +21,6 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 
 ### From Source
 
-```
-
-## Performance & Caching
-
-### Intelligent Cache System
-
-The modular design includes a sophisticated caching system:
-
-#### Guide Cache (3-hour blocks)
-- **Smart Refresh**: Only refreshes first 48 hours
-- **Block Reuse**: Reuses cached blocks outside refresh window
-- **Safe Updates**: Backup/restore on failed downloads
-
-#### Series Details Cache
-- **First Run**: Downloads ~1000+ series details (normal)
-- **Subsequent Runs**: 95%+ cache efficiency (much faster)
-- **Intelligent Cleanup**: Removes only unused series
-
-#### XMLTV Management
-- **Always Backup**: Timestamped backup before each generation
-- **Smart Retention**: Keeps backups for guide duration
-- **Automatic Cleanup**: Removes old backups beyond retention
-
-### Performance Statistics Example
-
-```
-Extended details processing completed:
-  Total unique series: 1137
-  Downloads attempted: 45        ← Only new series
-  Unique series from cache: 1092 ← Reused existing (96.0% efficiency!)
-  Cache efficiency: 96.0% (1092/1137 unique series reused)
-
-Guide download completed:
-  Blocks: 56 total (8 downloaded, 48 cached, 0 failed)
-  Cache efficiency: 85.7% reused
-  Success rate: 100.0%
-
-Language detection statistics:
-  French: 1424 episodes (35.6%)
-  English: 2497 episodes (62.4%)
-  Spanish: 81 episodes (2.0%)
 ```bash
 # Clone repository
 git clone https://github.com/th0ma7/tv_grab_gracenote2epg.git
@@ -76,10 +35,36 @@ pip install -e .
 
 ### Dependencies
 
-Only one external dependency required:
+#### Required Dependencies
+
+Only one external dependency is required:
 
 ```bash
 pip install requests>=2.25.0
+```
+
+#### Optional Dependencies (Recommended)
+
+For automatic language detection, install langdetect:
+
+```bash
+pip install langdetect>=1.0.9
+```
+
+**Language Detection:**
+- **Required for multi-language support**: langdetect is required for automatic French/English/Spanish detection
+- **Without langdetect**: All content will be marked as English (no language detection errors)
+- **Configurable**: Can be enabled/disabled via configuration or command line
+
+The application will log the language detection status:
+```
+Language detection: Using langdetect library (enhanced accuracy)
+# OR
+Language detection: langdetect requested but not available
+  Please install langdetect: pip install langdetect
+Language detection: Disabled - defaulting to English for all content
+# OR  
+Language detection: Disabled by configuration - defaulting to English
 ```
 
 ## Quick Start
@@ -227,7 +212,7 @@ gracenote2epg.xml                  # Configuration file template
 
 #### 📺 XmltvGenerator (`gracenote2epg_xmltv.py`)
 - XMLTV standard compliance
-- Enhanced description formatting
+- Enhanced description formatting with multi-language support
 - Genre mapping and program metadata
 
 ## Multi-Language Support
@@ -235,9 +220,12 @@ gracenote2epg.xml                  # Configuration file template
 gracenote2epg features automatic language detection and translation for improved Kodi/TVheadend display:
 
 ### **Automatic Language Detection**
-- **Intelligent Analysis**: Detects French, English, and Spanish from program descriptions
+- **langdetect Library Required**: Uses statistical language detection for accurate French/English/Spanish identification
+- **Configurable**: Can be enabled/disabled via configuration (`langdetect=true/false`) or command line (`--langdetect true/false`)
+- **Smart Default**: Automatically enabled if langdetect is installed, disabled otherwise
 - **Contextual Application**: Uses description analysis to set language for titles and metadata
 - **XMLTV Compliance**: Proper `lang` attributes for all text elements
+- **Fallback Behavior**: When disabled, all content is marked as English (no detection errors)
 
 ### **Smart Translations**
 - **Localized Terms**: Automatically translates rating and status terms
@@ -256,12 +244,19 @@ gracenote2epg features automatic language detection and translation for improved
   ```
 
 ### **Language Statistics**
-Runtime statistics show distribution of detected languages:
+Runtime statistics show distribution of detected languages when enabled:
 ```
-Language detection statistics:
+Language detection: Using langdetect library (enhanced accuracy)
+Language detection statistics (using langdetect library):
   French: 1424 episodes (35.6%)
   English: 2497 episodes (62.4%)
   Spanish: 81 episodes (2.0%)
+```
+
+When disabled:
+```
+Language detection: Disabled by configuration - defaulting to English
+Language detection disabled - all content marked as English
 ```
 
 ## Configuration Options
@@ -275,31 +270,7 @@ Language detection statistics:
 ```xml
 <setting id="xdetails">true</setting>   <!-- Download series details -->
 <setting id="xdesc">true</setting>      <!-- Enhanced descriptions with translations -->
-```
-
-### TVheadend Integration
-```xml
-<setting id="tvhoff">true</setting>     <!-- Enable TVH integration -->
-<setting id="tvhurl">127.0.0.1</setting> <!-- TVH server IP -->
-<setting id="tvhport">9981</setting>    <!-- TVH port -->
-<setting id="tvhmatch">true</setting>   <!-- Use TVH channel filtering -->
-```
-
-### Performance Tuning
-```xml
-<setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
-<setting id="redays">7</setting>        <!-- Cache retention (match days) -->
-```
-
-### Required Settings
-```xml
-<setting id="zipcode">92101</setting>  <!-- US ZIP or Canadian postal code -->
-```
-
-### Extended Details
-```xml
-<setting id="xdetails">true</setting>   <!-- Download series details -->
-<setting id="xdesc">true</setting>      <!-- Enhanced descriptions -->
+<setting id="langdetect">true</setting> <!-- Enable automatic language detection -->
 ```
 
 ### TVheadend Integration
@@ -350,7 +321,14 @@ Guide download completed:
   Blocks: 56 total (8 downloaded, 48 cached, 0 failed)
   Cache efficiency: 85.7% reused
   Success rate: 100.0%
+
+Language detection statistics (using langdetect library):
+  French: 1424 episodes (35.6%)
+  English: 2497 episodes (62.4%)
+  Spanish: 81 episodes (2.0%)
 ```
+
+**Note**: Language statistics only appear when langdetect is enabled and available. Without langdetect, all content is marked as English.
 
 ## Command-Line Interface
 
@@ -377,6 +355,8 @@ gracenote2epg --console          # Display logs on stderr too
 gracenote2epg --days 7           # Number of days (1-14)
 gracenote2epg --offset 1         # Start tomorrow instead of today
 gracenote2epg --output guide.xml # Save XML to file (replaces default cache/xmltv.xml)
+gracenote2epg --langdetect true  # Enable automatic language detection
+gracenote2epg --langdetect false # Disable language detection (all English)
 ```
 
 ### Location Codes
@@ -418,6 +398,9 @@ tv_grab_gracenote2epg/
 # Install development dependencies
 pip install -e .[dev]
 
+# Install optional dependencies for enhanced features
+pip install langdetect>=1.0.9
+
 # Run tests (when available)
 python -m pytest
 
@@ -448,13 +431,15 @@ The modular architecture makes it easy to extend functionality:
 - **Same Cache Structure**: Compatible with existing cache files
 - **Enhanced Logging**: Configurable output with proper stdout/stderr separation
 - **Improved Error Handling**: Better WAF protection and retry logic
+- **Enhanced Language Detection**: Optional langdetect integration for better accuracy
 
 ### Migration Steps
 
 1. **Backup existing configuration**: Your existing `zap2epg.xml` works as-is (rename to `gracenote2epg.xml`)
 2. **Install gracenote2epg**: `pip install .`
-3. **Update scripts**: Replace `tv_grab_zap2epg` calls with `gracenote2epg`
-4. **Test functionality**: Run with `--console` to verify operation
+3. **Install optional dependencies**: `pip install langdetect` (recommended)
+4. **Update scripts**: Replace `tv_grab_zap2epg` calls with `gracenote2epg`
+5. **Test functionality**: Run with `--console` to verify operation
 
 ### Compatibility
 
@@ -475,6 +460,21 @@ pip install -e .
 
 # Check Python path
 python -c "import gracenote2epg; print(gracenote2epg.__file__)"
+```
+
+**Language Detection:**
+```bash
+# Install langdetect for automatic language detection
+pip install langdetect
+
+# Enable language detection
+gracenote2epg --langdetect true --console --days 1 --zip 92101
+
+# Disable language detection (all content marked as English)  
+gracenote2epg --langdetect false --console --days 1 --zip 92101
+
+# Check language detection status in logs
+gracenote2epg --console --days 1 --zip 92101
 ```
 
 **Configuration Problems:**
@@ -504,6 +504,7 @@ gracenote2epg --debug --console --days 1 --zip 92101
 
 Debug output includes:
 - Configuration processing details
+- Language detection method and statistics
 - Cache efficiency metrics
 - Download statistics and timing
 - TVheadend integration status
@@ -528,6 +529,7 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 ### 1.0 - Initial Release
 - **Python Modularization**: Based on edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and Python modular architecture
 - **Multi-Language Support**: Automatic French/English/Spanish detection with localized translations
+- **Reliable Language Detection**: langdetect library integration with configurable enable/disable options
 - **Enhanced XMLTV Generation**: Line breaks for better Kodi display, proper language attributes
 - **Intelligent Cache Management**: Smart caching with 95%+ efficiency  
 - **Flexible Logging System**: File-based logging with optional console output and language statistics
