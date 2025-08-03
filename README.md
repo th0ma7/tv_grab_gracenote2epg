@@ -8,6 +8,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
+- **🌍 Multi-Language Support**: Automatic language detection with French, English, and Spanish translations
 - **🧠 Intelligent Cache Management**: Preserves existing data and only downloads what's needed
 - **⚡ Smart Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
 - **💾 Automatic XMLTV Backup**: Safe backup system with retention management
@@ -20,6 +21,47 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 
 ### From Source
 
+```
+
+## Performance & Caching
+
+### Intelligent Cache System
+
+The modular design includes a sophisticated caching system:
+
+#### Guide Cache (3-hour blocks)
+- **Smart Refresh**: Only refreshes first 48 hours
+- **Block Reuse**: Reuses cached blocks outside refresh window
+- **Safe Updates**: Backup/restore on failed downloads
+
+#### Series Details Cache
+- **First Run**: Downloads ~1000+ series details (normal)
+- **Subsequent Runs**: 95%+ cache efficiency (much faster)
+- **Intelligent Cleanup**: Removes only unused series
+
+#### XMLTV Management
+- **Always Backup**: Timestamped backup before each generation
+- **Smart Retention**: Keeps backups for guide duration
+- **Automatic Cleanup**: Removes old backups beyond retention
+
+### Performance Statistics Example
+
+```
+Extended details processing completed:
+  Total unique series: 1137
+  Downloads attempted: 45        ← Only new series
+  Unique series from cache: 1092 ← Reused existing (96.0% efficiency!)
+  Cache efficiency: 96.0% (1092/1137 unique series reused)
+
+Guide download completed:
+  Blocks: 56 total (8 downloaded, 48 cached, 0 failed)
+  Cache efficiency: 85.7% reused
+  Success rate: 100.0%
+
+Language detection statistics:
+  French: 1424 episodes (35.6%)
+  English: 2497 episodes (62.4%)
+  Spanish: 81 episodes (2.0%)
 ```bash
 # Clone repository
 git clone https://github.com/th0ma7/tv_grab_gracenote2epg.git
@@ -188,7 +230,66 @@ gracenote2epg.xml                  # Configuration file template
 - Enhanced description formatting
 - Genre mapping and program metadata
 
+## Multi-Language Support
+
+gracenote2epg features automatic language detection and translation for improved Kodi/TVheadend display:
+
+### **Automatic Language Detection**
+- **Intelligent Analysis**: Detects French, English, and Spanish from program descriptions
+- **Contextual Application**: Uses description analysis to set language for titles and metadata
+- **XMLTV Compliance**: Proper `lang` attributes for all text elements
+
+### **Smart Translations**
+- **Localized Terms**: Automatically translates rating and status terms
+- **Examples**:
+  - English: "Rated: PG | NEW | CC"
+  - French: "Classé: G | NOUVEAU | CC" 
+  - Spanish: "Clasificado: PG | NUEVO | CC"
+
+### **Enhanced Formatting**
+- **Kodi-Optimized Display**: Line breaks separate main description from details
+- **Before**: `Description text • S01E05 | Rated: G | CC` (single line)
+- **After**: 
+  ```
+  Description text
+  S01E05 | Classé: G | CC
+  ```
+
+### **Language Statistics**
+Runtime statistics show distribution of detected languages:
+```
+Language detection statistics:
+  French: 1424 episodes (35.6%)
+  English: 2497 episodes (62.4%)
+  Spanish: 81 episodes (2.0%)
+```
+
 ## Configuration Options
+
+### Required Settings
+```xml
+<setting id="zipcode">92101</setting>  <!-- US ZIP or Canadian postal code -->
+```
+
+### Extended Details with Multi-Language Support
+```xml
+<setting id="xdetails">true</setting>   <!-- Download series details -->
+<setting id="xdesc">true</setting>      <!-- Enhanced descriptions with translations -->
+```
+
+### TVheadend Integration
+```xml
+<setting id="tvhoff">true</setting>     <!-- Enable TVH integration -->
+<setting id="tvhurl">127.0.0.1</setting> <!-- TVH server IP -->
+<setting id="tvhport">9981</setting>    <!-- TVH port -->
+<setting id="tvhmatch">true</setting>   <!-- Use TVH channel filtering -->
+```
+
+### Performance Tuning
+```xml
+<setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
+<setting id="redays">7</setting>        <!-- Cache retention (match days) -->
+```
 
 ### Required Settings
 ```xml
@@ -426,12 +527,12 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 
 ### 1.0 - Initial Release
 - **Python Modularization**: Based on edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and Python modular architecture
-- **Modular Architecture**: Clean module separation for maintainability
-- **XMLTV Standard Compliance**: Proper stdout/stderr separation
-- **Enhanced Cache Management**: Intelligent caching with 95%+ efficiency  
-- **Flexible Logging System**: File-based logging with optional console output
+- **Multi-Language Support**: Automatic French/English/Spanish detection with localized translations
+- **Enhanced XMLTV Generation**: Line breaks for better Kodi display, proper language attributes
+- **Intelligent Cache Management**: Smart caching with 95%+ efficiency  
+- **Flexible Logging System**: File-based logging with optional console output and language statistics
 - **Improved Error Handling**: Robust downloading and parsing with WAF protection
-- **Better Debugging**: Detailed statistics and configurable verbosity
+- **Better Debugging**: Detailed statistics including language distribution and configurable verbosity
 - **Platform Auto-detection**: Smart directory configuration for Raspberry Pi, Synology, etc.
 - **Full Backward Compatibility**: Works with existing zap2epg configurations and cache
-- **Kodi/TVheadend Integration**: Maintains original design goals for media center use
+- **Kodi/TVheadend Integration**: Maintains original design goals for media center use with enhanced formatting

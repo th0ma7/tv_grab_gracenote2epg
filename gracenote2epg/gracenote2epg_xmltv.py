@@ -2,7 +2,7 @@
 gracenote2epg.gracenote2epg_xmltv - XMLTV generation
 
 Handles generation of XMLTV files with intelligent description formatting,
-station information, and program details.
+station information, and program details with multi-language support.
 """
 
 import codecs
@@ -12,7 +12,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from .gracenote2epg_utils import CacheManager, TimeUtils, HtmlUtils
 
@@ -20,10 +20,40 @@ from .gracenote2epg_utils import CacheManager, TimeUtils, HtmlUtils
 class XmltvGenerator:
     """Generates XMLTV files from parsed guide data"""
 
+    # Translation dictionaries for different languages
+    TRANSLATIONS = {
+        'en': {
+            'rated': 'Rated',
+            'new': 'NEW',
+            'premiere': 'PREMIERE',
+            'finale': 'FINALE',
+            'live': 'LIVE',
+            'premiered': 'Premiered'
+        },
+        'fr': {
+            'rated': 'Classé',
+            'new': 'NOUVEAU',
+            'premiere': 'PREMIÈRE',
+            'finale': 'FINALE',
+            'live': 'EN DIRECT',
+            'premiered': 'Première diffusion'
+        },
+        'es': {
+            'rated': 'Clasificado',
+            'new': 'NUEVO',
+            'premiere': 'ESTRENO',
+            'finale': 'FINAL',
+            'live': 'EN VIVO',
+            'premiered': 'Estrenado'
+        }
+    }
+
     def __init__(self, cache_manager: CacheManager):
         self.cache_manager = cache_manager
         self.station_count = 0
         self.episode_count = 0
+        # Language statistics
+        self.language_stats = {'fr': 0, 'en': 0, 'es': 0}
 
     def generate_xmltv(self, schedule: Dict, config: Dict[str, Any],
                        xmltv_file: Path) -> bool:
@@ -55,6 +85,77 @@ class XmltvGenerator:
         except Exception as e:
             logging.exception('Exception in XMLTV generation: %s', str(e))
             return False
+
+    def _detect_language(self, text: str) -> str:
+        """Detect language from text content with improved detection"""
+        if not text or not isinstance(text, str):
+            return 'en'
+
+        text_lower = text.lower()
+
+        # French indicators - enhanced with more patterns
+        french_words = [
+            # Common grammatical words
+            'le ', 'la ', 'les ', 'un ', 'une ', 'des ', 'du ', 'de la ', 'dans ', 'avec ', 'pour ', 'sur ', 'par ',
+            'qui ', 'que ', 'où ', 'ça ', 'c\'est', 'il ', 'elle ', 'ils ', 'elles ', 'nous ', 'vous ',
+            'leur ', 'leurs ', 'son ', 'sa ', 'ses ', 'mon ', 'ma ', 'mes ', 'ton ', 'ta ', 'tes',
+            # Common French words
+            'est ', 'sont ', 'était ', 'être ', 'avoir ', 'fait ', 'faire ', 'dit ', 'dire ',
+            'ceci ', 'cela ', 'cette ', 'ces ', 'tout ', 'tous ', 'toute ', 'toutes ',
+            # French-specific patterns
+            'tion ', 'sion ', 'ment ', 'ence ', 'ance ', 'ique ', 'oire ', 'aire ',
+            # Canadian French TV terms
+            'nouvelles', 'émission', 'publicitaire', 'payée', 'information', 'régionale', 'nationale', 'internationale'
+        ]
+
+        # French endings and patterns
+        french_patterns = [
+            'tion', 'sion', 'ment', 'ence', 'ance', 'ique', 'oire', 'aire', 'ité', 'été', 'ée'
+        ]
+
+        french_score = sum(1 for word in french_words if word in text_lower)
+
+        # Check for French word endings
+        for pattern in french_patterns:
+            if text_lower.endswith(pattern):
+                french_score += 1
+
+        # Spanish indicators
+        spanish_words = [
+            'el ', 'la ', 'los ', 'las ', 'un ', 'una ', 'unos ', 'unas ', 'de ', 'del ', 'en ', 'con ',
+            'por ', 'para ', 'que ', 'y ', 'o ', 'si ', 'no ', 'sí ', 'él ', 'ella ', 'ellos ', 'ellas ',
+            'su ', 'sus ', 'mi ', 'mis ', 'tu ', 'tus ', 'nuestro ', 'nuestra'
+        ]
+        spanish_score = sum(1 for word in spanish_words if word in text_lower)
+
+        # English indicators
+        english_words = [
+            'the ', 'and ', 'or ', 'but ', 'in ', 'on ', 'at ', 'to ', 'for ', 'of ', 'with ', 'by ',
+            'from ', 'up ', 'about ', 'into ', 'through ', 'during ', 'before ', 'after ', 'above ',
+            'below ', 'between ', 'among ', 'this ', 'that ', 'these ', 'those'
+        ]
+        english_score = sum(1 for word in english_words if word in text_lower)
+
+        # Adjusted scoring system - lower threshold for French detection
+        logging.debug('Language detection for "%s": FR=%d, ES=%d, EN=%d',
+                     text[:50], french_score, spanish_score, english_score)
+
+        if french_score >= 1 and french_score > spanish_score and french_score >= english_score:
+            logging.debug('Detected language: French')
+            return 'fr'
+        elif spanish_score >= 2 and spanish_score > french_score and spanish_score > english_score:
+            logging.debug('Detected language: Spanish')
+            return 'es'
+        else:
+            logging.debug('Detected language: English (default)')
+            return 'en'
+
+    def _get_translated_term(self, term: str, language: str) -> str:
+        """Get translated term for the detected language"""
+        if language in self.TRANSLATIONS and term in self.TRANSLATIONS[language]:
+            return self.TRANSLATIONS[language][term]
+        # Fallback to English
+        return self.TRANSLATIONS['en'].get(term, term.upper())
 
     def _print_header(self, fh, encoding: str):
         """Print XMLTV header"""
@@ -172,26 +273,44 @@ class XmltvGenerator:
                         if dd_progid and len(dd_progid) >= 4:
                             fh.write(f'\t\t<episode-num system="dd_progid">{dd_progid[:-4]}.{dd_progid[-4:]}</episode-num>\n')
 
-                        # Title
+                        # Detect language from description first (more reliable than title)
+                        detected_language = 'en'  # Default
+
+                        # Priority 1: Try to detect from extended description if available
+                        if use_extended_desc and need_extended_download:
+                            extended_desc = episode_data.get('epseriesdesc')
+                            if extended_desc and str(extended_desc).strip():
+                                detected_language = self._detect_language(str(extended_desc))
+
+                        # Priority 2: Detect from basic description
+                        if detected_language == 'en':  # If not detected from extended desc
+                            basic_desc = episode_data.get('epdesc')
+                            if basic_desc and str(basic_desc).strip():
+                                detected_language = self._detect_language(str(basic_desc))
+
+                        # Count language statistics
+                        self.language_stats[detected_language] += 1
+
+                        # Title with detected language (from description)
                         if episode_data.get('epshow'):
                             show_title = HtmlUtils.conv_html(episode_data['epshow'])
-                            fh.write(f'\t\t<title lang="en">{show_title}</title>\n')
+                            fh.write(f'\t\t<title lang="{detected_language}">{show_title}</title>\n')
 
-                        # Sub-title
+                        # Sub-title with same language as title
                         if episode_data.get('eptitle'):
                             episode_title = HtmlUtils.conv_html(episode_data['eptitle'])
                             if safe_titles:
                                 # Remove unsafe characters for filenames
                                 episode_title = re.sub(r'[\\/*?:|]', "_", episode_title)
-                            fh.write(f'\t\t<sub-title lang="en">{episode_title}</sub-title>\n')
+                            fh.write(f'\t\t<sub-title lang="{detected_language}">{episode_title}</sub-title>\n')
 
-                        # Description logic
+                        # Description logic with pre-detected language
                         description_written = False
 
                         # Try enhanced descriptions first if enabled
                         if use_extended_desc and need_extended_download:
                             try:
-                                enhanced_desc = self._add_enhanced_description(episode_data)
+                                enhanced_desc, _ = self._add_enhanced_description(episode_data, detected_language)
                                 if enhanced_desc and str(enhanced_desc).strip():
                                     basic_desc = episode_data.get('epdesc')
                                     basic_desc_str = str(basic_desc).strip() if basic_desc else ''
@@ -199,7 +318,7 @@ class XmltvGenerator:
 
                                     if (enhanced_desc_str != basic_desc_str or
                                         episode_data.get('epseriesdesc')):  # Has extended data
-                                        fh.write(f'\t\t<desc lang="en">{HtmlUtils.conv_html(enhanced_desc)}</desc>\n')
+                                        fh.write(f'\t\t<desc lang="{detected_language}">{HtmlUtils.conv_html(enhanced_desc)}</desc>\n')
                                         enhanced_desc_count += 1
                                         description_written = True
                             except Exception as e:
@@ -210,7 +329,17 @@ class XmltvGenerator:
                         if not description_written:
                             basic_desc = episode_data.get('epdesc')
                             if basic_desc and str(basic_desc).strip():
-                                fh.write(f'\t\t<desc lang="en">{HtmlUtils.conv_html(basic_desc)}</desc>\n')
+                                # Apply translations using pre-detected language
+                                enhanced_basic_desc = self._add_enhanced_info_to_basic_desc(
+                                    str(basic_desc).strip(), episode_data, detected_language)
+
+                                # Debug logging to see what's happening
+                                logging.debug('Basic description for %s: original="%s", enhanced="%s"',
+                                             episode_data.get('epshow', 'Unknown'),
+                                             str(basic_desc).strip()[:50],
+                                             enhanced_basic_desc[:50] if enhanced_basic_desc != str(basic_desc).strip() else "NO CHANGE")
+
+                                fh.write(f'\t\t<desc lang="{detected_language}">{HtmlUtils.conv_html(enhanced_basic_desc)}</desc>\n')
                                 basic_desc_count += 1
                                 description_written = True
 
@@ -286,6 +415,15 @@ class XmltvGenerator:
             logging.info('Description statistics: Episodes=%d, Basic_desc=%d, Enhanced_desc=%d',
                         self.episode_count, basic_desc_count, enhanced_desc_count)
 
+            # Log language statistics
+            total_episodes = sum(self.language_stats.values())
+            if total_episodes > 0:
+                logging.info('Language detection statistics:')
+                for lang, count in self.language_stats.items():
+                    percentage = (count / total_episodes) * 100
+                    lang_name = {'fr': 'French', 'en': 'English', 'es': 'Spanish'}[lang]
+                    logging.info('  %s: %d episodes (%.1f%%)', lang_name, count, percentage)
+
             # Report missing descriptions
             if missing_desc_count > 0:
                 logging.info('Missing descriptions: %d episodes from %d unique programs',
@@ -294,38 +432,15 @@ class XmltvGenerator:
         except Exception as e:
             logging.exception('Exception in _print_episodes: %s', str(e))
 
-    def _add_enhanced_description(self, episode_data: Dict) -> Optional[str]:
-        """Create enhanced description using intelligent default formatting"""
+    def _add_enhanced_info_to_basic_desc(self, base_desc: str, episode_data: Dict, language: str) -> str:
+        """Add enhanced info (with translations) to basic description"""
         try:
-            # Priority 1: Use extended series description if available
-            extended_desc = episode_data.get('epseriesdesc')
-            if extended_desc and str(extended_desc).strip():
-                extended_desc = str(extended_desc).strip()
-            else:
-                extended_desc = ''
-
-            # Priority 2: Use basic episode description
-            guide_desc = episode_data.get('epdesc')
-            if guide_desc and str(guide_desc).strip():
-                guide_desc = str(guide_desc).strip()
-            else:
-                guide_desc = ''
-
-            # Choose primary description
-            if extended_desc and len(extended_desc) > len(guide_desc):
-                base_desc = extended_desc
-                logging.debug('Using extended series description for %s', episode_data.get('epshow', 'Unknown'))
-            elif guide_desc:
-                base_desc = guide_desc
-            else:
-                return None
-
-            # Add additional info intelligently
+            # Build additional info with translations
             additional_info = []
 
             # Add year for movies/shows
             if episode_data.get('epyear') and str(episode_data['epyear']) != '0':
-                additional_info.append(f"({episode_data['epyear']})")
+                additional_info.append(str(episode_data['epyear']))
 
             # Add season/episode info for series
             if episode_data.get('epsn') and episode_data.get('epen'):
@@ -342,25 +457,27 @@ class XmltvGenerator:
                     tz_offset_seconds = (time.altzone if is_dst else time.timezone)
                     orig_date = int(episode_data['epoad']) + tz_offset_seconds
                     premiere_date = datetime.fromtimestamp(orig_date).strftime('%Y-%m-%d')
-                    additional_info.append(f"Premiered: {premiere_date}")
+                    premiered_text = self._get_translated_term('premiered', detected_language)
+                    additional_info.append(f"{premiered_text}: {premiere_date}")
                 except (ValueError, TypeError, OSError):
                     pass
 
             # Add rating if available
             if episode_data.get('eprating') and str(episode_data['eprating']).strip():
-                additional_info.append(f"Rated: {episode_data['eprating']}")
+                rated_text = self._get_translated_term('rated', detected_language)
+                additional_info.append(f"{rated_text}: {episode_data['eprating']}")
 
-            # Add flags
+            # Add flags with translations
             flags = []
             if episode_data.get('epflag') and isinstance(episode_data['epflag'], (list, tuple)):
                 if 'New' in episode_data['epflag']:
-                    flags.append('NEW')
+                    flags.append(self._get_translated_term('new', detected_language))
                 if 'Live' in episode_data['epflag']:
-                    flags.append('LIVE')
+                    flags.append(self._get_translated_term('live', detected_language))
                 if 'Premiere' in episode_data['epflag']:
-                    flags.append('PREMIERE')
+                    flags.append(self._get_translated_term('premiere', detected_language))
                 if 'Finale' in episode_data['epflag']:
-                    flags.append('FINALE')
+                    flags.append(self._get_translated_term('finale', detected_language))
 
             if episode_data.get('eptags') and isinstance(episode_data['eptags'], (list, tuple)):
                 if 'CC' in episode_data['eptags']:
@@ -369,18 +486,130 @@ class XmltvGenerator:
                     flags.append('HD')
 
             if flags:
-                additional_info.append(' '.join(flags))
+                additional_info.append(' | '.join(flags))  # Ajouter des "|" entre les flags
 
-            # Combine everything intelligently
+            # Combine with line break for better Kodi display
             if additional_info:
                 info_str = ' | '.join(additional_info)
-                enhanced_description = f"{base_desc} • {info_str}"
+                # Use \n for line break in XMLTV (standard compliant)
+                enhanced_description = f"{base_desc}\n{info_str}"
+                logging.debug('Enhanced basic description created for %s: added %d info items in %s',
+                             episode_data.get('epshow', 'Unknown'), len(additional_info), language)
+                return enhanced_description
+
+            return base_desc
+
+        except Exception as e:
+            logging.warning('Error enhancing basic description for episode %s: %s',
+                          episode_data.get('epid', 'unknown'), str(e))
+            return base_desc
+
+    def _add_enhanced_description(self, episode_data: Dict, detected_language: str) -> Tuple[Optional[str], str]:
+        """Create enhanced description with intelligent formatting and pre-detected language
+
+        Args:
+            episode_data: Episode data dictionary
+            detected_language: Pre-detected language from description analysis
+
+        Returns:
+            tuple: (enhanced_description, detected_language)
+        """
+        try:
+            # Temporary fix - there's still a 'language' reference somewhere
+            language = detected_language
+
+            # Priority 1: Use extended series description if available
+            extended_desc = episode_data.get('epseriesdesc')
+            if extended_desc and str(extended_desc).strip():
+                extended_desc = str(extended_desc).strip()
+            else:
+                extended_desc = ''
+
+            # Priority 2: Use basic episode description
+            guide_desc = episode_data.get('epdesc')
+            if guide_desc and str(guide_desc).strip():
+                guide_desc = str(guide_desc).strip()
+            else:
+                guide_desc = ''
+
+            # Choose primary description (language already detected)
+            if extended_desc and len(extended_desc) > len(guide_desc):
+                base_desc = extended_desc
+                logging.debug('Using extended series description for %s (language: %s)',
+                             episode_data.get('epshow', 'Unknown'), detected_language)
+            elif guide_desc:
+                base_desc = guide_desc
+                logging.debug('Using guide description for %s (language: %s)',
+                             episode_data.get('epshow', 'Unknown'), detected_language)
+            else:
+                return None, detected_language
+
+            # Build additional info with translations
+            additional_info = []
+
+            # Add year for movies/shows
+            if episode_data.get('epyear') and str(episode_data['epyear']) != '0':
+                additional_info.append(str(episode_data['epyear']))
+
+            # Add season/episode info for series
+            if episode_data.get('epsn') and episode_data.get('epen'):
+                try:
+                    season_ep = f"S{int(episode_data['epsn']):02d}E{int(episode_data['epen']):02d}"
+                    additional_info.append(season_ep)
+                except (ValueError, TypeError):
+                    pass
+
+            # Add premiere date if available
+            if episode_data.get('epoad') and str(episode_data['epoad']).isdigit() and int(episode_data['epoad']) > 0:
+                try:
+                    is_dst = time.daylight and time.localtime().tm_isdst > 0
+                    tz_offset_seconds = (time.altzone if is_dst else time.timezone)
+                    orig_date = int(episode_data['epoad']) + tz_offset_seconds
+                    premiere_date = datetime.fromtimestamp(orig_date).strftime('%Y-%m-%d')
+                    premiered_text = self._get_translated_term('premiered', language)
+                    additional_info.append(f"{premiered_text}: {premiere_date}")
+                except (ValueError, TypeError, OSError):
+                    pass
+
+            # Add rating if available
+            if episode_data.get('eprating') and str(episode_data['eprating']).strip():
+                rated_text = self._get_translated_term('rated', language)
+                additional_info.append(f"{rated_text}: {episode_data['eprating']}")
+
+            # Add flags with translations
+            flags = []
+            if episode_data.get('epflag') and isinstance(episode_data['epflag'], (list, tuple)):
+                if 'New' in episode_data['epflag']:
+                    flags.append(self._get_translated_term('new', language))
+                if 'Live' in episode_data['epflag']:
+                    flags.append(self._get_translated_term('live', language))
+                if 'Premiere' in episode_data['epflag']:
+                    flags.append(self._get_translated_term('premiere', language))
+                if 'Finale' in episode_data['epflag']:
+                    flags.append(self._get_translated_term('finale', language))
+
+            if episode_data.get('eptags') and isinstance(episode_data['eptags'], (list, tuple)):
+                if 'CC' in episode_data['eptags']:
+                    flags.append('CC')
+                if 'HD' in episode_data['eptags']:
+                    flags.append('HD')
+
+            if flags:
+                additional_info.append(' | '.join(flags))  # Ajouter des "|" entre les flags
+
+            # Combine with line break for better Kodi display
+            if additional_info:
+                info_str = ' | '.join(additional_info)
+                # Use \n for line break in XMLTV (standard compliant)
+                enhanced_description = f"{base_desc}\n{info_str}"
 
                 # Only return enhanced if it's meaningfully different
                 if enhanced_description != base_desc:
-                    return enhanced_description
+                    logging.debug('Enhanced description created for %s: added %d info items in %s',
+                                 episode_data.get('epshow', 'Unknown'), len(additional_info), language)
+                    return enhanced_description, language
 
-            return base_desc if base_desc else None
+            return base_desc if base_desc else None, language
 
         except Exception as e:
             logging.warning('Error creating enhanced description for episode %s: %s',
@@ -389,10 +618,11 @@ class XmltvGenerator:
             try:
                 basic_desc = episode_data.get('epdesc')
                 if basic_desc and str(basic_desc).strip():
-                    return str(basic_desc).strip()
+                    fallback_language = self._detect_language(str(basic_desc))
+                    return str(basic_desc).strip(), fallback_language
             except:
                 pass
-            return None
+            return None, 'en'
 
     def _write_program_icons(self, fh, episode_data: Dict, ep_icon: str, episode_key: str):
         """Write program icon information"""
