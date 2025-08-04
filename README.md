@@ -19,20 +19,6 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 
 ## Installation
 
-### From Source
-
-```bash
-# Clone repository
-git clone https://github.com/th0ma7/tv_grab_gracenote2epg.git
-cd tv_grab_gracenote2epg
-
-# Install with pip
-pip install .
-
-# Or install in development mode
-pip install -e .
-```
-
 ### Dependencies
 
 #### Required Dependencies
@@ -73,16 +59,16 @@ Language detection: Disabled by configuration - defaulting to English
 
 ```bash
 # Show capabilities
-gracenote2epg --capabilities
+tv_grab_gracenote2epg --capabilities
 
 # Download 7 days of guide data (XML to stdout, logs to file)
-gracenote2epg --days 7 --zip 92101
+tv_grab_gracenote2epg --days 7 --zip 92101
 
 # With console logging (logs to stderr + file)
-gracenote2epg --days 7 --zip 92101 --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --console
 
 # Use Canadian postal code
-gracenote2epg --days 3 --postal J3B1M4 --warning --console
+tv_grab_gracenote2epg --days 3 --postal J3B1M4 --warning --console
 ```
 
 ### Module Usage
@@ -122,16 +108,16 @@ The grabber follows XMLTV standards with XML output to `stdout` and configurable
 
 ```bash
 # Standard: XML to stdout, logs to file only
-gracenote2epg --days 7 --zip 92101
+tv_grab_gracenote2epg --days 7 --zip 92101
 
 # With console output: XML to stdout, logs to stderr + file
-gracenote2epg --days 7 --zip 92101 --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --console
 
 # Save XML to custom file instead of stdout
-gracenote2epg --days 7 --zip 92101 --output guide.xml
+tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml
 
 # Custom file with console logs visible
-gracenote2epg --days 7 --zip 92101 --output guide.xml --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml --console
 ```
 
 **Note**: When using `--output filename`, the XML is written to the specified file instead of stdout, and the default cache/xmltv.xml is replaced by your custom filename.
@@ -140,80 +126,23 @@ gracenote2epg --days 7 --zip 92101 --output guide.xml --console
 
 ```bash
 # Default logging: INFO+WARNING+ERROR to file, XML to stdout
-gracenote2epg --days 7 --zip 92101
+tv_grab_gracenote2epg --days 7 --zip 92101
 
 # Console output: same logs to stderr + file, XML to stdout  
-gracenote2epg --days 7 --zip 92101 --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --console
 
 # Warnings only: WARNING+ERROR to file, XML to stdout
-gracenote2epg --days 7 --zip 92101 --warning
+tv_grab_gracenote2epg --days 7 --zip 92101 --warning
 
 # Warnings with console: WARNING+ERROR to stderr + file
-gracenote2epg --days 7 --zip 92101 --warning --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --warning --console
 
 # Debug mode: ALL logs to file, XML to stdout
-gracenote2epg --days 7 --zip 92101 --debug
+tv_grab_gracenote2epg --days 7 --zip 92101 --debug
 
 # Debug with console: ALL logs to stderr + file (very verbose)
-gracenote2epg --days 7 --zip 92101 --debug --console
+tv_grab_gracenote2epg --days 7 --zip 92101 --debug --console
 ```
-
-## Architecture
-
-### Modular Structure
-
-```
-gracenote2epg/
-├── __init__.py                    # Package initialization and exports
-├── gracenote2epg_args.py          # Command-line argument parsing
-├── gracenote2epg_config.py        # XML configuration management
-├── gracenote2epg_downloader.py    # Optimized HTTP downloader with WAF protection
-├── gracenote2epg_parser.py        # Guide data parsing and extended details
-├── gracenote2epg_tvheadend.py     # TVheadend server integration
-├── gracenote2epg_utils.py         # Cache management and utilities
-└── gracenote2epg_xmltv.py         # XMLTV generation with intelligent descriptions
-
-gracenote2epg.py                   # Main orchestration script
-gracenote2epg.xml                  # Configuration file template
-```
-
-### Key Components
-
-#### 🎛️ ArgumentParser (`gracenote2epg_args.py`)
-- XMLTV baseline capabilities compliance
-- System-specific directory auto-detection
-- Input validation and normalization
-- Flexible logging configuration
-
-#### ⚙️ ConfigManager (`gracenote2epg_config.py`)
-- XML configuration parsing and validation
-- Automatic cleanup of deprecated settings
-- Migration from older configuration versions
-
-#### 🌐 OptimizedDownloader (`gracenote2epg_downloader.py`)
-- WAF protection with adaptive delays
-- Connection reuse and intelligent retry
-- Support for both requests and urllib fallback
-
-#### 📡 TvheadendClient (`gracenote2epg_tvheadend.py`)
-- Automatic channel list fetching
-- Channel number matching with subchannel logic
-- Flexible station filtering
-
-#### 💾 CacheManager (`gracenote2epg_utils.py`)
-- Intelligent guide block caching (3-hour blocks)
-- Series details cache with optimal reuse
-- Automatic XMLTV backup and retention
-
-#### 🔍 GuideParser (`gracenote2epg_parser.py`)
-- TV guide data parsing from JSON
-- Extended series details integration
-- Intelligent cache usage for series data
-
-#### 📺 XmltvGenerator (`gracenote2epg_xmltv.py`)
-- XMLTV standard compliance
-- Enhanced description formatting with multi-language support
-- Genre mapping and program metadata
 
 ## Multi-Language Support
 
@@ -285,6 +214,7 @@ Language detection disabled - all content marked as English
 ```xml
 <setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
 <setting id="redays">7</setting>        <!-- Cache retention (match days) -->
+<setting id="refresh">48</setting>      <!-- Cache refresh window (hours) -->
 ```
 
 ## Performance & Caching
@@ -335,44 +265,195 @@ Language detection statistics (using langdetect library):
 ### XMLTV Baseline Capabilities
 
 ```bash
-gracenote2epg --description       # Show grabber description
-gracenote2epg --version          # Show version
-gracenote2epg --capabilities     # Show capabilities
+tv_grab_gracenote2epg --description       # Show grabber description
+tv_grab_gracenote2epg --version          # Show version
+tv_grab_gracenote2epg --capabilities     # Show capabilities
 ```
 
 ### Logging Control
 
 ```bash
-gracenote2epg --quiet            # File logging only (explicit)
-gracenote2epg --warning          # Only warnings/errors to file
-gracenote2epg --debug            # All debug info to file
-gracenote2epg --console          # Display logs on stderr too
+tv_grab_gracenote2epg --quiet            # File logging only (explicit)
+tv_grab_gracenote2epg --warning          # Only warnings/errors to file
+tv_grab_gracenote2epg --debug            # All debug info to file
+tv_grab_gracenote2epg --console          # Display logs on stderr too
 ```
 
 ### Guide Parameters
 
 ```bash
-gracenote2epg --days 7           # Number of days (1-14)
-gracenote2epg --offset 1         # Start tomorrow instead of today
-gracenote2epg --output guide.xml # Save XML to file (replaces default cache/xmltv.xml)
-gracenote2epg --langdetect true  # Enable automatic language detection
-gracenote2epg --langdetect false # Disable language detection (all English)
+tv_grab_gracenote2epg --days 7           # Number of days (1-14)
+tv_grab_gracenote2epg --offset 1         # Start tomorrow instead of today
+tv_grab_gracenote2epg --output guide.xml # Save XML to file (replaces default cache/xmltv.xml)
+tv_grab_gracenote2epg --langdetect true  # Enable automatic language detection
+tv_grab_gracenote2epg --langdetect false # Disable language detection (all English)
+tv_grab_gracenote2epg --refresh 24       # Refresh first 24 hours (default: 48)
+tv_grab_gracenote2epg --norefresh        # Use all cached data (fastest)
 ```
 
 ### Location Codes
 
 ```bash
-gracenote2epg --zip 92101        # US ZIP code
-gracenote2epg --postal J3B1M4    # Canadian postal code
-gracenote2epg --code 90210       # Generic location code
+tv_grab_gracenote2epg --zip 92101        # US ZIP code
+tv_grab_gracenote2epg --postal J3B1M4    # Canadian postal code
+tv_grab_gracenote2epg --code 90210       # Generic location code
 ```
 
 ### Configuration
 
 ```bash
-gracenote2epg --config-file /path/to/config.xml  # Custom config file
-gracenote2epg --basedir /path/to/basedir         # Custom base directory
+tv_grab_gracenote2epg --config-file /path/to/config.xml  # Custom config file
+tv_grab_gracenote2epg --basedir /path/to/basedir         # Custom base directory
 ```
+
+## Migration from Other EPG Grabbers
+
+When migrating from other EPG grabber modules (such as `tv_grab_zap2epg` or other XMLTV grabbers), you must **completely reset the EPG database** to avoid conflicts and silent data rejection.
+
+### ⚠️ **Important: EPG Database Conflicts**
+
+TVheadend's EPG database can have conflicts when switching between different grabbers, causing **silent rejection** of program data. Even if the XML format is correct, TVheadend may accept channels but reject all programs without error messages.
+
+**Symptoms of EPG conflicts:**
+```
+[INFO]:xmltv: grab took 280 seconds
+[INFO]:xmltv: parse took 0 seconds  
+[INFO]:xmltv: channels   tot=   33 new=    0 mod=    0  ← Channels OK
+[INFO]:xmltv: episodes   tot=    0 new=    0 mod=    0  ← No programs!
+[INFO]:xmltv: broadcasts tot=    0 new=    0 mod=    0  ← No programs!
+```
+
+### 🛠️ **Complete Migration Procedure**
+
+Follow these steps **exactly** for a successful migration:
+
+#### **Step 1: Configure EPG Grabbers**
+1. **TVheadend Web Interface** → **Configuration** → **Channel/EPG** → **EPG Grabber Modules**
+2. **Enable**: `tv_grab_gracenote2epg` ✅
+3. **Disable**: All other grabbers (especially `tv_grab_zap2epg`) ❌
+4. **Save Configuration**
+
+#### **Step 2: Stop TVheadend**
+```bash
+# Synology DSM7
+sudo synopkg stop tvheadend
+
+# Standard Linux
+sudo systemctl stop tvheadend
+
+# Wait for complete shutdown
+sleep 5
+```
+
+#### **Step 3: Clean EPG Database and Cache**
+```bash
+# Synology DSM7 paths
+sudo rm -f /var/packages/tvheadend/var/epgdb.v3
+sudo rm -rf /var/packages/tvheadend/var/epggrab/xmltv/channels/*
+
+# Synology DSM6 paths  
+sudo rm -f /var/packages/tvheadend/target/var/epgdb.v3
+sudo rm -rf /var/packages/tvheadend/target/var/epggrab/xmltv/channels/*
+
+# Standard Linux paths
+sudo rm -f /home/hts/.hts/tvheadend/epgdb.v3
+sudo rm -rf /home/hts/.hts/tvheadend/epggrab/xmltv/channels/*
+```
+
+#### **Step 4: Start TVheadend**
+```bash
+# Synology DSM7
+sudo synopkg start tvheadend
+
+# Standard Linux  
+sudo systemctl start tvheadend
+```
+
+#### **Step 5: Wait for First Pass (Channels Detection)**
+- **Wait 2-5 minutes** after TVheadend startup
+- First grabber run will detect **channels only**:
+
+```
+[INFO]:xmltv: grab took 280 seconds
+[INFO]:xmltv: channels   tot=   33 new=   33 mod=   33  ← Channels detected ✅
+[INFO]:xmltv: episodes   tot=    0 new=    0 mod=    0  ← No programs yet (normal)
+[INFO]:xmltv: broadcasts tot=    0 new=    0 mod=    0  ← No programs yet (normal)
+[INFO]:xmltv: scheduling save epg timer
+```
+
+- **Wait for EPG database save**:
+```
+[INFO]:epgdb: snapshot start
+[INFO]:epgdb: save start  
+[INFO]:epgdb: stored (size 79)  ← Small size = channels only
+```
+
+#### **Step 6: Manual Re-run for Program Data**
+1. **TVheadend Web Interface** → **Configuration** → **Channel/EPG** → **EPG Grabber Modules**
+2. Click **"Re-run internal EPG grabbers"** 
+3. **Wait 5-10 minutes** for complete download
+
+#### **Step 7: Verify Success**
+Second run should show **full program data**:
+
+```
+[INFO]:xmltv: grab took 283 seconds
+[INFO]:xmltv: parse took 2 seconds
+[INFO]:xmltv: channels   tot=   33 new=    0 mod=    0  ← Channels stable
+[INFO]:xmltv: seasons    tot=15249 new=15005 mod=  244  ← Programs detected ✅
+[INFO]:xmltv: episodes   tot=11962 new=11810 mod=  152  ← Episodes detected ✅  
+[INFO]:xmltv: broadcasts tot=15682 new=15434 mod=  248  ← Broadcasts detected ✅
+```
+
+- **Large EPG database save**:
+```
+[INFO]:epgdb: queued to save (size 9816663)  ← Large size = full data ✅
+[INFO]:epgdb:   broadcasts 15244             ← Programs saved ✅
+[INFO]:epgdb: stored (size 1887624)
+```
+
+### ✅ **Migration Complete**
+
+Your EPG should now show:
+- **Channel listings** with proper names and numbers
+- **Program information** with descriptions, times, and metadata  
+- **Extended details** (if enabled): cast, ratings, episode info
+- **Multi-language support** with proper translations
+
+### 🚨 **Troubleshooting Migration Issues**
+
+**Problem**: Channels detected but no programs after re-run
+- **Solution**: Repeat Step 3 (database cleanup) and try again
+- **Cause**: Residual conflicts from previous grabber
+
+**Problem**: No channels detected at all  
+- **Solution**: Check `gracenote2epg.xml` configuration
+- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`)
+
+**Problem**: Some channels missing
+- **Solution**: Check TVheadend channel configuration
+- **Verify**: Enabled channels in TVheadend match your lineup
+
+**Problem**: Extended details not showing
+- **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
+- **Note**: First run downloads 1000+ series details (normal delay)
+
+### 📝 **Why This Process is Necessary**
+
+1. **Database Schema Differences**: Different grabbers may use incompatible data structures
+2. **Channel ID Conflicts**: IDs like `45867.zap2epg` vs `45867.gracenote2epg` cause conflicts  
+3. **Timestamp Format Issues**: Different time formats can cause silent rejection
+4. **Cache Corruption**: Mixed cache data from different sources
+5. **TVheadend Logic**: TVheadend requires clean state for proper grabber switching
+
+### 🔄 **Switching Back to Previous Grabber**
+
+If you need to switch back to your previous grabber:
+1. **Repeat the entire procedure** with the previous grabber enabled
+2. **Always clean EPG database** when switching grabbers
+3. **Never run multiple XMLTV grabbers** simultaneously
+
+**Remember**: Always perform a **complete EPG reset** when changing grabbers to ensure proper data ingestion.
 
 ## Development
 
@@ -392,34 +473,7 @@ tv_grab_gracenote2epg/
 └── tv_grab_gracenote2epg -> gracenote2epg.py  # Symlink
 ```
 
-### Running Tests
 
-```bash
-# Install development dependencies
-pip install -e .[dev]
-
-# Install optional dependencies for enhanced features
-pip install langdetect>=1.0.9
-
-# Run tests (when available)
-python -m pytest
-
-# Type checking
-mypy gracenote2epg/
-
-# Code formatting
-black gracenote2epg/
-```
-
-### Adding New Features
-
-The modular architecture makes it easy to extend functionality:
-
-1. **New Download Sources**: Extend `OptimizedDownloader`
-2. **Additional Parsers**: Create new parser modules
-3. **Output Formats**: Extend `XmltvGenerator` or create new generators
-4. **Cache Strategies**: Modify `CacheManager` methods
-5. **TVheadend Features**: Enhance `TvheadendClient`
 
 ## Migration from script.module.zap2epg / tv_grab_zap2epg
 
@@ -438,7 +492,7 @@ The modular architecture makes it easy to extend functionality:
 1. **Backup existing configuration**: Your existing `zap2epg.xml` works as-is (rename to `gracenote2epg.xml`)
 2. **Install gracenote2epg**: `pip install .`
 3. **Install optional dependencies**: `pip install langdetect` (recommended)
-4. **Update scripts**: Replace `tv_grab_zap2epg` calls with `gracenote2epg`
+4. **Update scripts**: Replace `tv_grab_zap2epg` calls with `tv_grab_gracenote2epg`
 5. **Test functionality**: Run with `--console` to verify operation
 
 ### Compatibility
@@ -451,55 +505,37 @@ The modular architecture makes it easy to extend functionality:
 
 ## Troubleshooting
 
-### Common Issues
+### XMLTV Validation
 
-**Import Errors:**
+To validate the generated XMLTV file against the standard DTD:
+
 ```bash
-# Ensure proper installation
-pip install -e .
+# Validate XMLTV output
+xmllint --noout --dtdvalid /usr/share/xmltv/xmltv.dtd xmltv.xml
 
-# Check Python path
-python -c "import gracenote2epg; print(gracenote2epg.__file__)"
+# If xmltv.dtd is not available, download it
+wget http://xmltv.cvs.sourceforge.net/viewvc/*checkout*/xmltv/xmltv/xmltv.dtd
+xmllint --noout --dtdvalid xmltv.dtd xmltv.xml
 ```
 
-**Language Detection:**
-```bash
-# Install langdetect for automatic language detection
-pip install langdetect
+**Expected DTD Validation Result:**
+The XMLTV output is mostly DTD-compliant except for one intentional extension:
 
-# Enable language detection
-gracenote2epg --langdetect true --console --days 1 --zip 92101
-
-# Disable language detection (all content marked as English)  
-gracenote2epg --langdetect false --console --days 1 --zip 92101
-
-# Check language detection status in logs
-gracenote2epg --console --days 1 --zip 92101
+```xml
+<credits>
+    <actor role="Max Perkins" src="https://zap2it.tmsimg.com/assets/71352_v9_bb.jpg">Colin Firth</actor>
+    <actor role="Thomas Wolfe" src="https://zap2it.tmsimg.com/assets/71369_v9_bb.jpg">Jude Law</actor>
+</credits>
 ```
 
-**Configuration Problems:**
-```bash
-# Check default config location
-gracenote2epg --console --days 1
-
-# Use custom config
-gracenote2epg --config-file /path/to/config.xml
-```
-
-**TVheadend Connection:**
-```bash
-# Test with console output
-gracenote2epg --console --days 1 --zip 92101
-
-# Check TVheadend settings in config.xml
-```
+**Note**: The `src=` attribute in actor tags is **not part of the strict XMLTV DTD** but can be used by XMLTV consumers for displaying actor photos. This extension provides enhanced program information without breaking XMLTV parsing.
 
 ### Debug Mode
 
 Enable detailed logging for troubleshooting:
 
 ```bash
-gracenote2epg --debug --console --days 1 --zip 92101
+tv_grab_gracenote2epg --debug --console --days 1 --zip 92101
 ```
 
 Debug output includes:
@@ -525,6 +561,18 @@ This project was originally designed to be easily setup in Kodi for use as a gra
 This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining full compatibility with existing configurations and cache formats.
 
 ## Version History
+
+### 1.1 - Current Release
+- **Progress Tracking**: Real-time progress indicators for long operations
+- **Migration Documentation**: Complete migration guide from other EPG grabbers
+- **Directory Permissions Fix**: Create directories with proper 755 permissions instead of 777
+- **Enhanced Synology Detection**: Improved system detection for DSM6/DSM7 path selection
+- **Extended Details Improvements**: Better handling and corrections for xdetails and xdesc configuration
+- **Strict XMLTV DTD Compliance**: Full DTD compliance except for actor photo `src=` attribute extension
+- **XMLTV Generation Progress**: Percentage progress indicators during XML generation (especially useful for langdetect operations)
+- **Download Progress Counters**: Added "x/y" counters for extended details downloads to show remaining downloads
+- **Cache Refresh Options**: New `--refresh X` and `--norefresh` command-line options for flexible cache management
+- **Configuration Version 4**: Updated configuration schema to support new refresh options
 
 ### 1.0 - Initial Release
 - **Python Modularization**: Based on edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and Python modular architecture
