@@ -17,6 +17,7 @@ class ArgumentParser:
 
     # Validation patterns
     DAYS_PATTERN = re.compile(r'^[1-9]$|^1[0-4]$')  # 1-14 days
+    REFRESH_PATTERN = re.compile(r'^[0-9]+$|^[1-9][0-9]+$')  # 0-999 hours
     CA_CODE_PATTERN = re.compile(r'^[A-Z][0-9][A-Z][ ]?[0-9][A-Z][0-9]$')  # Canadian postal
     US_CODE_PATTERN = re.compile(r'^[0-9]{5}$')  # US ZIP code
 
@@ -35,6 +36,8 @@ Examples:
   gracenote2epg --days 7 --zip 92101
   gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
   gracenote2epg --days 7 --zip 92101 --langdetect false
+  gracenote2epg --days 7 --zip 92101 --norefresh
+  gracenote2epg --days 7 --zip 92101 --refresh 24
 
 Configuration:
   Default config: ~/gracenote2epg/conf/gracenote2epg.xml
@@ -47,6 +50,10 @@ Logging Levels:
   --debug         All debug information to file only, XML to console
   --console       Display active log level to console (can combine with --warning/--debug)
   --quiet         No console output except XML, logs to file only
+
+Cache Refresh Options:
+  --norefresh     Don't refresh cached blocks (use all cached data)
+  --refresh XX    Refresh blocks from the first XX hours (default: 48)
 
 Language Detection:
   --langdetect    Enable/disable automatic language detection (requires langdetect library)
@@ -121,6 +128,21 @@ Language Detection:
             help='Start with data for day today plus X days'
         )
 
+        # Cache refresh control
+        refresh_group = parser.add_mutually_exclusive_group()
+        refresh_group.add_argument(
+            '--norefresh',
+            action='store_true',
+            help='Don\'t refresh cached blocks (use all cached data, fastest)'
+        )
+
+        refresh_group.add_argument(
+            '--refresh',
+            type=int,
+            metavar='HOURS',
+            help='Refresh blocks from the first HOURS hours (default: 48, range: 0-168)'
+        )
+
         # Language detection
         parser.add_argument(
             '--langdetect',
@@ -191,6 +213,9 @@ Language Detection:
         # Normalize langdetect option
         self._normalize_langdetect(args)
 
+        # Normalize refresh options
+        self._normalize_refresh(args)
+
         return args
 
     def _validate_args(self, args):
@@ -204,6 +229,11 @@ Language Detection:
         if args.offset is not None:
             if not self.DAYS_PATTERN.match(str(args.offset)):
                 self.parser.error(f"Parameter [--offset] must be 1-14, got: {args.offset}")
+
+        # Validate refresh parameter
+        if args.refresh is not None:
+            if args.refresh < 0 or args.refresh > 168:  # 0 to 7 days
+                self.parser.error(f"Parameter [--refresh] must be 0-168 hours, got: {args.refresh}")
 
         # Validate location codes
         location_code = args.zip or args.postal or args.code
@@ -238,6 +268,20 @@ Language Detection:
         else:
             args.langdetect = None  # Use config default
 
+    def _normalize_refresh(self, args):
+        """Normalize refresh options"""
+        if args.norefresh:
+            args.refresh_hours = 0  # No refresh
+        elif args.refresh is not None:
+            args.refresh_hours = args.refresh
+        else:
+            args.refresh_hours = None  # Use config default
+
+        # Clean up individual fields
+        del args.norefresh
+        if hasattr(args, 'refresh'):
+            del args.refresh
+
     def get_logging_config(self, args):
         """Determine logging configuration from arguments"""
         config = {
@@ -259,7 +303,7 @@ Language Detection:
         return config
 
     def get_system_defaults(self):
-        """Get system-specific default directories"""
+        """Get system-specific default directories with proper DSM6/DSM7 path selection"""
         import platform
         import os
         from pathlib import Path
@@ -278,13 +322,34 @@ Language Detection:
                 base_dir = home / "gracenote2epg"
 
         elif system_type == "synology":
-            # Synology NAS
-            if self._get_dsm_version() < 40000:
-                # DSM6
+            # Synology NAS with proper DSM6/DSM7 path selection
+            dsm_version = self._get_dsm_version()
+
+            if dsm_version < 40000:
+                # DSM6 and earlier: /var/packages/tvheadend/target/var/epggrab/gracenote2epg
                 base_dir = Path("/var/packages/tvheadend/target/var/epggrab/gracenote2epg")
             else:
-                # DSM7
+                # DSM7 and later: /var/packages/tvheadend/var/epggrab/gracenote2epg
                 base_dir = Path("/var/packages/tvheadend/var/epggrab/gracenote2epg")
+
+            # Add debug logging
+            import logging
+            logging.debug(f"Synology detected - DSM version: {dsm_version}")
+            logging.debug(f"Selected path: {base_dir}")
+
+            # Verify the parent directory exists, fallback if not
+            if not base_dir.parent.exists():
+                logging.warning(f"Expected Synology TVheadend path {base_dir.parent} doesn't exist")
+                logging.warning("Available TVheadend paths:")
+                for check_path in ["/var/packages/tvheadend/var", "/var/packages/tvheadend/target/var"]:
+                    if Path(check_path).exists():
+                        logging.warning(f"  Found: {check_path}")
+                        # Use the available path
+                        base_dir = Path(check_path) / "epggrab" / "gracenote2epg"
+                        break
+                else:
+                    logging.warning("No TVheadend paths found, falling back to home directory")
+                    base_dir = home / "gracenote2epg"
 
         else:
             # Standard Linux/Docker
@@ -300,8 +365,20 @@ Language Detection:
             'log_file': base_dir / "log" / "gracenote2epg.log"
         }
 
+    def create_directories_with_proper_permissions(self):
+        """Create required directories with proper 755 permissions"""
+        defaults = self.get_system_defaults()
+
+        # Create directories with 755 permissions (rwxr-xr-x)
+        for directory in [defaults['cache_dir'], defaults['conf_dir'], defaults['log_dir']]:
+            try:
+                directory.mkdir(parents=True, exist_ok=True, mode=0o755)
+            except Exception as e:
+                # Fallback: create without mode specification (depends on umask)
+                directory.mkdir(parents=True, exist_ok=True)
+
     def _detect_system_type(self):
-        """Detect system type for default directories"""
+        """Detect system type for default directories - FIXED for Synology"""
         import platform
         import os
 
@@ -324,22 +401,83 @@ Language Detection:
             except:
                 pass
 
-        # Check if Synology
-        if "synology" in platform.uname().release.lower():
+        # FIXED: Enhanced Synology detection
+
+        # Method 1: Check for Synology-specific files (most reliable)
+        if Path("/etc/synoinfo.conf").exists():
             return "synology"
+
+        # Method 2: Check VERSION file for Synology content
+        try:
+            version_file = Path("/etc/VERSION")
+            if version_file.exists():
+                with open(version_file, 'r') as f:
+                    content = f.read().lower()
+                    if "synology" in content or ('majorversion=' in content and 'buildnumber=' in content):
+                        return "synology"
+        except:
+            pass
+
+        # Method 3: Check for TVheadend Synology directory structure (DSM6 or DSM7)
+        if Path("/var/packages/tvheadend/var").exists() or Path("/var/packages/tvheadend/target/var").exists():
+            return "synology"
+
+        # Method 4: Original platform check (fallback)
+        try:
+            if "synology" in platform.uname().release.lower():
+                return "synology"
+        except:
+            pass
 
         return "linux"
 
     def _get_dsm_version(self):
-        """Get Synology DSM version number"""
-        import platform
+        """Get Synology DSM version number - FIXED with proper DSM6/DSM7 detection"""
+        import re
+
+        # Method 1: Parse /etc/VERSION file (most accurate)
         try:
-            # Extract version from uname
-            uname_release = platform.uname().release
-            # Format: "DSM-7.1.1-42962" or similar
-            version_match = re.search(r'#(\d+)', uname_release)
-            if version_match:
-                return int(version_match.group(1))
+            version_file = Path("/etc/VERSION")
+            if version_file.exists():
+                with open(version_file, 'r') as f:
+                    content = f.read()
+
+                # Extract major version and build number
+                major_match = re.search(r'majorversion="?(\d+)"?', content)
+                build_match = re.search(r'buildnumber="?(\d+)"?', content)
+
+                if major_match:
+                    major_version = int(major_match.group(1))
+
+                    if build_match:
+                        build_number = int(build_match.group(1))
+                        # Return actual build number for precise version detection
+                        return build_number
+
+                    # Fallback to major version mapping if no build number
+                    if major_version >= 7:
+                        return 50000  # DSM7+ uses /var/packages/tvheadend/var/
+                    elif major_version >= 6:
+                        return 30000  # DSM6 uses /var/packages/tvheadend/target/var/
+                    else:
+                        return 20000  # DSM5 and older (if any)
+
+        except Exception as e:
+            pass
+
+        # Method 2: Check directory structure as fallback to determine DSM version
+        try:
+            # DSM7+ path exists
+            if Path("/var/packages/tvheadend/var").exists() and not Path("/var/packages/tvheadend/target/var").exists():
+                return 50000  # DSM7+
+            # DSM6 path exists
+            elif Path("/var/packages/tvheadend/target/var").exists():
+                return 30000  # DSM6
+            # Both exist (transition case) - prefer newer structure
+            elif Path("/var/packages/tvheadend/var").exists():
+                return 50000  # DSM7+
         except:
             pass
-        return 50000  # Default to DSM7+ behavior
+
+        # Default to DSM7+ if detection fails
+        return 50000

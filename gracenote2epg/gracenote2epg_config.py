@@ -19,13 +19,14 @@ class ConfigManager:
 
     # Default configuration template
     DEFAULT_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
-<settings version="3">
+<settings version="4">
   <setting id="zipcode">92101</setting>
   <setting id="lineupcode">lineupId</setting>
   <setting id="lineup">Local Over the Air Broadcast</setting>
   <setting id="device">-</setting>
   <setting id="days">7</setting>
   <setting id="redays">7</setting>
+  <setting id="refresh">48</setting>
   <setting id="slist"></setting>
   <setting id="stitle">false</setting>
   <setting id="xdetails">true</setting>
@@ -54,6 +55,9 @@ class ConfigManager:
         'days': str,
         'redays': str,
 
+        # Cache refresh settings
+        'refresh': str,
+
         # Station filtering
         'slist': str,
         'stitle': bool,
@@ -79,7 +83,7 @@ class ConfigManager:
 
     # Settings order for clean output
     SETTINGS_ORDER = [
-        'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays',
+        'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays', 'refresh',
         'slist', 'stitle', 'xdetails', 'xdesc', 'langdetect', 'epgenre', 'epicon',
         'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch'
     ]
@@ -87,10 +91,10 @@ class ConfigManager:
     def __init__(self, config_file: Path):
         self.config_file = Path(config_file)
         self.settings: Dict[str, Any] = {}
-        self.version: str = "3"
+        self.version: str = "4"
 
     def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None,
-                    langdetect: Optional[bool] = None) -> Dict[str, Any]:
+                    langdetect: Optional[bool] = None, refresh_hours: Optional[int] = None) -> Dict[str, Any]:
         """Load and validate configuration file"""
 
         # Create default config if doesn't exist
@@ -113,6 +117,13 @@ class ConfigManager:
             self.settings['langdetect'] = langdetect
             logging.info('Using langdetect from command line: %s', langdetect)
 
+        if refresh_hours is not None:
+            self.settings['refresh'] = str(refresh_hours)
+            if refresh_hours == 0:
+                logging.info('Cache refresh disabled from command line (--norefresh)')
+            else:
+                logging.info('Using refresh hours from command line: %s', refresh_hours)
+
         # Validate required settings
         self._validate_config()
 
@@ -122,11 +133,15 @@ class ConfigManager:
         return self.settings
 
     def _create_default_config(self):
-        """Create default configuration file"""
+        """Create default configuration file with proper permissions"""
         logging.info('Creating default configuration: %s', self.config_file)
 
-        # Ensure directory exists
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with 755 permissions (rwxr-xr-x)
+        try:
+            self.config_file.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+        except Exception as e:
+            # Fallback: create without mode specification (depends on umask)
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Write default configuration
         with open(self.config_file, 'w', encoding='utf-8') as f:
@@ -140,8 +155,8 @@ class ConfigManager:
 
             logging.info('Reading configuration from: %s', self.config_file)
 
-            # Get version
-            self.version = root.attrib.get('version', '2')
+            # Get version - default to version 4 for consistency
+            self.version = root.attrib.get('version', '4')
             logging.info('Configuration version: %s', self.version)
 
             # Parse settings
@@ -156,7 +171,7 @@ class ConfigManager:
                 if self.version == '2':
                     setting_value = setting.text
                 else:
-                    # Version 3: try 'value' attribute first, then text
+                    # Version 3+: try 'value' attribute first, then text
                     setting_value = setting.get('value')
                     if setting_value is None:
                         setting_value = setting.text
@@ -225,6 +240,17 @@ class ConfigManager:
             logging.error('Available settings: %s', list(self.settings.keys()))
             raise ValueError('Missing required zipcode in configuration')
 
+        # Validate refresh hours
+        refresh_setting = self.settings.get('refresh', '48')
+        try:
+            refresh_hours = int(refresh_setting)
+            if refresh_hours < 0 or refresh_hours > 168:
+                logging.warning('Invalid refresh hours %d, using default 48', refresh_hours)
+                self.settings['refresh'] = '48'
+        except (ValueError, TypeError):
+            logging.warning('Invalid refresh setting "%s", using default 48', refresh_setting)
+            self.settings['refresh'] = '48'
+
     def _set_defaults(self):
         """Set default values for missing settings"""
         # Check if langdetect is available for smart default
@@ -235,6 +261,7 @@ class ConfigManager:
             'device': '-',
             'days': '1',
             'redays': '1',
+            'refresh': '48',  # Default 48 hours refresh window
             'lineup': 'Local Over the Air Broadcast',
             'slist': '',
             'stitle': False,
@@ -297,7 +324,7 @@ class ConfigManager:
         """Write cleaned configuration file"""
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n')
-            f.write(f'<settings version="{self.version or "3"}">\n')
+            f.write(f'<settings version="{self.version or "4"}">\n')
 
             # Write settings in preferred order
             for setting_id in self.SETTINGS_ORDER:
@@ -337,6 +364,14 @@ class ConfigManager:
             return [s.strip() for s in slist.split(',') if s.strip()]
         return None
 
+    def get_refresh_hours(self) -> int:
+        """Get cache refresh hours from configuration"""
+        try:
+            return int(self.settings.get('refresh', '48'))
+        except (ValueError, TypeError):
+            logging.warning('Invalid refresh setting, using default 48 hours')
+            return 48
+
     def log_config_summary(self):
         """Log configuration summary"""
         logging.info('Configuration values processed:')
@@ -345,6 +380,13 @@ class ConfigManager:
         logging.info('  xdetails (download extended data): %s', self.settings.get('xdetails'))
         logging.info('  xdesc (use extended descriptions): %s', self.settings.get('xdesc'))
         logging.info('  langdetect (automatic language detection): %s', self.settings.get('langdetect'))
+
+        # Log cache refresh configuration
+        refresh_hours = self.get_refresh_hours()
+        if refresh_hours == 0:
+            logging.info('  refresh: disabled (use all cached data)')
+        else:
+            logging.info('  refresh: %d hours (refresh first %d hours of guide)', refresh_hours, refresh_hours)
 
         # Log configuration logic
         xdetails = self.settings.get('xdetails', False)

@@ -84,8 +84,8 @@ def main():
         log_file = defaults['log_file']
 
         # Ensure directories exist
-        for directory in [defaults['cache_dir'], defaults['conf_dir'], defaults['log_dir']]:
-            directory.mkdir(parents=True, exist_ok=True)
+        arg_parser = ArgumentParser()
+        arg_parser.create_directories_with_proper_permissions()
 
         # Setup logging
         logging_config = arg_parser.get_logging_config(args)
@@ -105,7 +105,8 @@ def main():
         config = config_manager.load_config(
             location_code=args.location_code,
             days=args.days,
-            langdetect=args.langdetect  # ← AJOUTER CETTE LIGNE
+            langdetect=args.langdetect,
+            refresh_hours=args.refresh_hours  # NEW: Pass refresh hours
         )
 
         # Log configuration summary
@@ -138,6 +139,9 @@ def main():
         offset = float(args.offset or 0)
         day_hours = days * 8  # 8 three-hour blocks per day
 
+        # Get refresh hours from configuration/command line
+        refresh_hours = config_manager.get_refresh_hours()
+
         # Calculate start time
         from datetime import datetime
         now = datetime.now().replace(microsecond=0, second=0, minute=0)
@@ -160,6 +164,12 @@ def main():
         logging.info('Lineup: %s', config.get('lineup'))
         logging.info('Caching directory: %s', defaults['cache_dir'])
 
+        # Log cache refresh configuration
+        if refresh_hours == 0:
+            logging.info('Cache refresh: disabled (--norefresh or refresh=0)')
+        else:
+            logging.info('Cache refresh: %d hours (first %d hours will be re-downloaded)', refresh_hours, refresh_hours)
+
         # Perform initial cache cleanup
         cache_manager.perform_initial_cleanup(grid_time_start, days, xmltv_file)
 
@@ -167,7 +177,7 @@ def main():
         with OptimizedDownloader(base_delay=0.8, min_delay=0.4) as downloader:
             guide_parser = GuideParser(cache_manager, downloader, tvh_client)
 
-            # Download guide blocks
+            # Download guide blocks with configurable refresh
             guide_success = guide_parser.optimized_guide_download(
                 grid_time_start=grid_time_start,
                 day_hours=day_hours,
@@ -175,7 +185,7 @@ def main():
                 country=country,
                 device=config.get('device', '-'),
                 zipcode=config.get('zipcode'),
-                refresh_hours=48
+                refresh_hours=refresh_hours  # NEW: Use configurable refresh hours
             )
 
             if not guide_success:

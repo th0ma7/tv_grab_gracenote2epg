@@ -266,6 +266,9 @@ class GuideParser:
         logging.info('Starting extended details download using optimized session')
 
         try:
+            # First pass: collect all unique series IDs and count total downloads needed
+            unique_series_to_download = set()
+
             for station in self.schedule:
                 sdict = self.schedule[station]
                 for episode in sdict:
@@ -274,22 +277,49 @@ class GuideParser:
                         series_id = edict.get('epseries')
 
                         # Check that series_id is not None or empty
-                        if not series_id or series_id in fail_list:
+                        if series_id and series_id not in fail_list:
+                            show_list.append(series_id)
+
+                            # Check if we need to download this series
+                            cached_details = self.cache_manager.load_series_details(series_id)
+                            if cached_details is None and series_id not in unique_series_to_download:
+                                unique_series_to_download.add(series_id)
+
+            total_downloads_needed = len(unique_series_to_download)
+            logging.info('Extended details: %d unique series found, %d downloads needed',
+                        len(set(show_list)), total_downloads_needed)
+
+            # Second pass: process all series with progress tracking
+            current_download = 0
+            processed_series = set()
+
+            for station in self.schedule:
+                sdict = self.schedule[station]
+                for episode in sdict:
+                    if not episode.startswith("ch"):
+                        edict = sdict[episode]
+                        series_id = edict.get('epseries')
+
+                        # Check that series_id is not None or empty
+                        if not series_id or series_id in fail_list or series_id in processed_series:
                             continue
 
-                        show_list.append(series_id)
+                        processed_series.add(series_id)
 
                         # Check if we already have cached details
                         cached_details = self.cache_manager.load_series_details(series_id)
 
                         if cached_details is None:
                             # Need to download new details
+                            current_download += 1
                             download_count += 1
 
                             url = 'https://tvlistings.gracenote.com/api/program/overviewDetails'
                             data = f'programSeriesID={series_id}'
 
-                            logging.info('Downloading extended details for: %s', series_id)
+                            # Add progress counter to the log message
+                            logging.info('Downloading extended details for: %s (%d/%d)',
+                                       series_id, current_download, total_downloads_needed)
                             logging.debug('  URL: %s?%s', url, data)
 
                             # Encode data for urllib

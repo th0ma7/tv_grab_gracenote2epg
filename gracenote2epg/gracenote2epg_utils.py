@@ -30,17 +30,16 @@ class TimeUtils:
 
     @staticmethod
     def conv_time(timestamp: float) -> str:
-        """Convert timestamp to XMLTV time format"""
+        """Convert timestamp to XMLTV time format (local time like zap2epg)"""
         return time.strftime("%Y%m%d%H%M%S", time.localtime(int(timestamp)))
 
     @staticmethod
     def get_timezone_offset() -> str:
-        """Get current timezone offset for XMLTV format"""
+        """Get timezone offset for XMLTV format (exactly like zap2epg)"""
         is_dst = time.daylight and time.localtime().tm_isdst > 0
-        offset_seconds = -(time.altzone if is_dst else time.timezone)
-        offset_hours = offset_seconds // 3600
-        offset_minutes = (offset_seconds % 3600) // 60
-        return f"{offset_hours:+03d}{offset_minutes:02d}"
+        # Use the exact same formula as zap2epg
+        tz_offset_hours = -(time.altzone if is_dst else time.timezone) / 3600
+        return "%.2d%.2d" % (tz_offset_hours, 0)
 
     @staticmethod
     def calculate_guide_time_range(grid_time_start: float, guide_days: int) -> tuple:
@@ -64,7 +63,12 @@ class CacheManager:
 
     def __init__(self, cache_dir: Path):
         self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Create cache directory with proper 755 permissions (rwxr-xr-x)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+        except Exception as e:
+            # Fallback: create without mode specification (depends on umask)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def backup_xmltv(self, xmltv_file: Path) -> Optional[Path]:
         """XMLTV: Always backup previous version"""
