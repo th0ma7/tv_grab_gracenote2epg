@@ -3,7 +3,7 @@ gracenote2epg.gracenote2epg_xmltv - XMLTV generation
 
 Handles generation of XMLTV files with intelligent description formatting,
 station information, and program details with multi-language support.
-DTD-compliant version.
+DTD-compliant version with optimized language detection caching.
 """
 
 import codecs
@@ -16,78 +16,33 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
 from .gracenote2epg_utils import CacheManager, TimeUtils, HtmlUtils
+from .gracenote2epg_language import LanguageDetector
 
 
 class XmltvGenerator:
     """Generates XMLTV files from parsed guide data"""
 
-    # Translation dictionaries for different languages
-    TRANSLATIONS = {
-        'en': {
-            'rated': 'Rated',
-            'new': 'NEW',
-            'premiere': 'PREMIERE',
-            'finale': 'FINALE',
-            'live': 'LIVE',
-            'premiered': 'Premiered'
-        },
-        'fr': {
-            'rated': 'Classé',
-            'new': 'NOUVEAU',
-            'premiere': 'PREMIÈRE',
-            'finale': 'FINALE',
-            'live': 'EN DIRECT',
-            'premiered': 'Première diffusion'
-        },
-        'es': {
-            'rated': 'Clasificado',
-            'new': 'NUEVO',
-            'premiere': 'ESTRENO',
-            'finale': 'FINAL',
-            'live': 'EN VIVO',
-            'premiered': 'Estrenado'
-        }
-    }
-
     def __init__(self, cache_manager: CacheManager):
         self.cache_manager = cache_manager
         self.station_count = 0
         self.episode_count = 0
-        # Language statistics
-        self.language_stats = {'fr': 0, 'en': 0, 'es': 0}
 
-        # Language detection will be configured per generation call
-        self.langdetect_enabled = False
-        self.langdetect_available = False
-
-    def _check_langdetect_availability(self) -> bool:
-        """Check if langdetect library is available"""
-        try:
-            from langdetect import detect
-            return True
-        except ImportError:
-            return False
+        # Language detection is handled by LanguageDetector module
+        self.language_detector: Optional[LanguageDetector] = None
 
     def generate_xmltv(self, schedule: Dict, config: Dict[str, Any],
                        xmltv_file: Path) -> bool:
-        """Generate XMLTV file with automatic backup"""
+        """Generate XMLTV file with automatic backup and optimized language detection"""
         try:
             logging.info('=== XMLTV Generation ===')
 
-            # Configure language detection based on config and availability
-            self.langdetect_available = self._check_langdetect_availability()
-            self.langdetect_enabled = config.get('langdetect', True)
+            # Initialize language detector with configuration
+            langdetect_enabled = config.get('langdetect', True)
+            self.language_detector = LanguageDetector(enabled=langdetect_enabled)
 
-            # Log language detection configuration
-            if self.langdetect_enabled and self.langdetect_available:
-                logging.info('Language detection: Using langdetect library (enhanced accuracy)')
-            elif self.langdetect_enabled and not self.langdetect_available:
-                logging.warning('Language detection: langdetect requested but not available')
-                logging.warning('  Please install langdetect: pip install langdetect')
-                logging.info('Language detection: Disabled - defaulting to English for all content')
-                self.langdetect_enabled = False
-            else:
-                logging.info('Language detection: Disabled by configuration - defaulting to English')
+            # Load cache from previous XMLTV if language detection is enabled
+            if langdetect_enabled:
+                self.language_detector.load_cache_from_xmltv(xmltv_file)
 
             # Always backup existing XMLTV
             self.cache_manager.backup_xmltv(xmltv_file)
@@ -101,6 +56,10 @@ class XmltvGenerator:
                 self._print_episodes(f, schedule, config)
                 self._print_footer(f)
 
+            # Log language statistics via detector
+            if self.language_detector:
+                self.language_detector.log_final_statistics()
+
             # Verify and log result
             if xmltv_file.exists():
                 file_size = xmltv_file.stat().st_size
@@ -113,44 +72,6 @@ class XmltvGenerator:
         except Exception as e:
             logging.exception('Exception in XMLTV generation: %s', str(e))
             return False
-
-    def _detect_language(self, text: str) -> str:
-        """Detect language from text content using langdetect only"""
-        if not text or not isinstance(text, str):
-            return 'en'
-
-        # Only use langdetect if both available and enabled
-        if self.langdetect_enabled and self.langdetect_available:
-            try:
-                from langdetect import detect, LangDetectException
-                try:
-                    detected = detect(text)
-                    # Map langdetect codes to our supported languages
-                    if detected in ['fr', 'en', 'es']:
-                        logging.debug('Language detected: %s for "%s"', detected, text[:50])
-                        return detected
-                    else:
-                        # Unsupported language, default to English
-                        logging.debug('Unsupported language "%s" detected, defaulting to English', detected)
-                        return 'en'
-                except LangDetectException:
-                    # langdetect failed (text too short, ambiguous, etc.)
-                    logging.debug('langdetect failed for text "%s", defaulting to English', text[:50])
-                    return 'en'
-            except ImportError:
-                # This shouldn't happen since we checked availability, but just in case
-                logging.debug('langdetect import error, defaulting to English')
-                return 'en'
-        else:
-            # Language detection disabled - default to English
-            return 'en'
-
-    def _get_translated_term(self, term: str, language: str) -> str:
-        """Get translated term for the detected language"""
-        if language in self.TRANSLATIONS and term in self.TRANSLATIONS[language]:
-            return self.TRANSLATIONS[language][term]
-        # Fallback to English
-        return self.TRANSLATIONS['en'].get(term, term.upper())
 
     def _print_header(self, fh, encoding: str):
         """Print XMLTV header"""
@@ -226,12 +147,11 @@ class XmltvGenerator:
             logging.exception('Exception in _print_stations: %s', str(e))
 
     def _print_episodes(self, fh, schedule: Dict, config: Dict[str, Any]):
-        """Print episode/program information - DTD compliant"""
+        """Print episode/program information - DTD compliant with optimized language detection"""
         self.episode_count = 0
         basic_desc_count = 0
         enhanced_desc_count = 0
         missing_desc_count = 0
-        missing_desc_programs = {}
 
         # Configuration values
         use_extended_desc = config.get('xdesc', False)      # Use extended series description
@@ -292,23 +212,24 @@ class XmltvGenerator:
                         stop_time = TimeUtils.conv_time(float(episode_data['epend'])) if episode_data.get('epend') else start_time
                         tz_offset = TimeUtils.get_timezone_offset()
 
-                        # Detect language from description BEFORE writing anything
+                        # Detect language using the language detector with caching optimization
+                        program_id = episode_data.get('epid', '')  # TMS ID unique
                         detected_language = 'en'  # Default
 
-                        # Priority 1: Try to detect from extended description if available
-                        if use_extended_desc and need_extended_download:
-                            extended_desc = episode_data.get('epseriesdesc')
-                            if extended_desc and str(extended_desc).strip():
-                                detected_language = self._detect_language(str(extended_desc))
+                        if self.language_detector:
+                            # Priority 1: Try to detect from extended description if available
+                            if use_extended_desc and need_extended_download:
+                                extended_desc = episode_data.get('epseriesdesc')
+                                if extended_desc and str(extended_desc).strip():
+                                    detected_language = self.language_detector.detect_language(
+                                        str(extended_desc), program_id)
 
-                        # Priority 2: Detect from basic description
-                        if detected_language == 'en':
-                            basic_desc = episode_data.get('epdesc')
-                            if basic_desc and str(basic_desc).strip():
-                                detected_language = self._detect_language(str(basic_desc))
-
-                        # Count language statistics
-                        self.language_stats[detected_language] += 1
+                            # Priority 2: Detect from basic description
+                            if detected_language == 'en':
+                                basic_desc = episode_data.get('epdesc')
+                                if basic_desc and str(basic_desc).strip():
+                                    detected_language = self.language_detector.detect_language(
+                                        str(basic_desc), program_id)
 
                         # Prepare final description
                         final_description = self._prepare_description(episode_data, detected_language,
@@ -430,18 +351,6 @@ class XmltvGenerator:
             if not use_extended_details and not use_extended_desc:
                 logging.info('Basic guide data only (no extended features)')
 
-            # Log language statistics
-            total_episodes = sum(self.language_stats.values())
-            if total_episodes > 0:
-                if self.langdetect_enabled:
-                    logging.info('Language detection statistics (using langdetect library):')
-                    for lang, count in self.language_stats.items():
-                        percentage = (count / total_episodes) * 100
-                        lang_name = {'fr': 'French', 'en': 'English', 'es': 'Spanish'}[lang]
-                        logging.info('  %s: %d episodes (%.1f%%)', lang_name, count, percentage)
-                else:
-                    logging.info('Language detection disabled - all content marked as English')
-
             # Report missing descriptions
             if missing_desc_count > 0:
                 logging.info('Missing descriptions: %d episodes', missing_desc_count)
@@ -519,27 +428,33 @@ class XmltvGenerator:
                     tz_offset_seconds = (time.altzone if is_dst else time.timezone)
                     orig_date = int(episode_data['epoad']) + tz_offset_seconds
                     premiere_date = datetime.fromtimestamp(orig_date).strftime('%Y-%m-%d')
-                    premiered_text = self._get_translated_term('premiered', language)
+                    # Use language detector for translation
+                    premiered_text = self.language_detector.get_translated_term('premiered', language) if self.language_detector else 'Premiered'
                     additional_info.append(f"{premiered_text}: {premiere_date}")
                 except (ValueError, TypeError, OSError):
                     pass
 
             # Add rating if available
             if episode_data.get('eprating') and str(episode_data['eprating']).strip():
-                rated_text = self._get_translated_term('rated', language)
+                # Use language detector for translation
+                rated_text = self.language_detector.get_translated_term('rated', language) if self.language_detector else 'Rated'
                 additional_info.append(f"{rated_text}: {episode_data['eprating']}")
 
             # Add flags with translations (DTD compliant - all in description)
             flags = []
             if episode_data.get('epflag') and isinstance(episode_data['epflag'], (list, tuple)):
                 if 'New' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('new', language))
+                    new_text = self.language_detector.get_translated_term('new', language) if self.language_detector else 'NEW'
+                    flags.append(new_text)
                 if 'Live' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('live', language))  # Keep in description
+                    live_text = self.language_detector.get_translated_term('live', language) if self.language_detector else 'LIVE'
+                    flags.append(live_text)
                 if 'Premiere' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('premiere', language))
+                    premiere_text = self.language_detector.get_translated_term('premiere', language) if self.language_detector else 'PREMIERE'
+                    flags.append(premiere_text)
                 if 'Finale' in episode_data['epflag']:
-                    flags.append(self._get_translated_term('finale', language))
+                    finale_text = self.language_detector.get_translated_term('finale', language) if self.language_detector else 'FINALE'
+                    flags.append(finale_text)
 
             if episode_data.get('eptags') and isinstance(episode_data['eptags'], (list, tuple)):
                 if 'CC' in episode_data['eptags']:
@@ -550,7 +465,7 @@ class XmltvGenerator:
             if flags:
                 additional_info.append(' | '.join(flags))
 
-            # FIXED: Use bullet point instead of newline (like zap2epg, DTD compliant)
+            # Use bullet point instead of newline (like zap2epg, DTD compliant)
             if additional_info:
                 info_str = ' | '.join(additional_info)
                 enhanced_description = f"{base_desc} • {info_str}"
