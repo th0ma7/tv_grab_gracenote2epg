@@ -2,20 +2,22 @@
 
 A modular Python implementation for downloading TV guide data from tvlistings.gracenote.com with intelligent caching and TVheadend integration.
 
-**Originally designed for Kodi/TVheadend integration** - This is a complete Python rewrite of the original zap2epg grabber.
+**Originally designed for Kodi/TVheadend integration** - This is a Python rewrite of the original zap2epg grabber.
 
 ## Key Features
 
+- **🚀 Intelligent Language Cache**: 95-100% cache efficiency with automatic language detection reuse
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
-- **🌍 Multi-Language Support**: Automatic language detection with French, English, and Spanish translations
-- **🧠 Intelligent Cache Management**: Preserves existing data and only downloads what's needed
-- **⚡ Smart Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
-- **💾 Automatic XMLTV Backup**: Safe backup system with retention management
-- **📡 TVheadend Integration**: Automatic channel filtering and matching
-- **🎯 Extended Program Details**: Optional enhanced descriptions with 95%+ cache efficiency
-- **🛡️ WAF Protection**: Robust downloading with adaptive delays and retry logic
+- **🌍 Enhanced XMLTV Metadata**: Language, country, video/audio elements with DTD compliance
+- **🧠 Smart Cache Management**: Preserves existing data and only downloads what's needed
+- **⚡ Optimized Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
+- **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
+- **🎯 Extended Program Details**: Optional enhanced descriptions
+- **🛡️  Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
+
+**IMPORTANT:** Raspberry Pi setup was not tested - requiring testers to confirm functionality or make any necessary changes.
 
 ## Installation
 
@@ -144,12 +146,26 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --debug
 tv_grab_gracenote2epg --days 7 --zip 92101 --debug --console
 ```
 
-## Multi-Language Support
+## **Enhanced XMLTV Metadata**
+When `xdetails=true`, additional DTD-compliant elements are included:
+- **`<credits>`**: Name, role and image URL of actors
+- **`<category>`**: Each categories associated to current program (Action, Adventure, Agriculture, etc.)
+- **`<language>`**: Full language names (Français, English, Español)
+- **`<country>`**: US/CA based on zipcode format
+- **`<video>`**: Aspect ratio (4:3 for pre-1960 content, 16:9 modern) + color info
+- **`<audio>`**: Stereo detection from program tags
 
-gracenote2epg features automatic language detection and translation for improved Kodi/TVheadend display:
+## Language Detection
+
+gracenote2epg features automatic language detection and translation with intelligent caching:
+
+### **Language Caching**
+- **Enhanced Performance**: Reuses language detections from previous XMLTV files
+- **95-100% Cache Efficiency**: Typical performance with established guides
+- **Speed Improvement**: XMLTV generation time reduced from ~15 minutes to ~2-3 minutes
 
 ### **Automatic Language Detection**
-- **langdetect Library Required**: Uses statistical language detection for accurate French/English/Spanish identification
+- **langdetect Library Integration**: Uses statistical language detection for accurate French/English/Spanish identification
 - **Configurable**: Can be enabled/disabled via configuration (`langdetect=true/false`) or command line (`--langdetect true/false`)
 - **Smart Default**: Automatically enabled if langdetect is installed, disabled otherwise
 - **Contextual Application**: Uses description analysis to set language for titles and metadata
@@ -163,20 +179,14 @@ gracenote2epg features automatic language detection and translation for improved
   - French: "Classé: G | NOUVEAU | CC" 
   - Spanish: "Clasificado: PG | NUEVO | CC"
 
-### **Enhanced Formatting**
-- **Kodi-Optimized Display**: Line breaks separate main description from details
-- **Before**: `Description text • S01E05 | Rated: G | CC` (single line)
-- **After**: 
-  ```
-  Description text
-  S01E05 | Classé: G | CC
-  ```
-
 ### **Language Statistics**
 Runtime statistics show distribution of detected languages when enabled:
 ```
-Language detection: Using langdetect library (enhanced accuracy)
-Language detection statistics (using langdetect library):
+Language cache loaded: 13234 programs cached
+Language cache performance:
+  Cache efficiency: 100.0% (4693 hits / 4693 lookups)
+
+Language detection statistics (using langdetect library with cache):
   French: 1424 episodes (35.6%)
   English: 2497 episodes (62.4%)
   Spanish: 81 episodes (2.0%)
@@ -195,11 +205,29 @@ Language detection disabled - all content marked as English
 <setting id="zipcode">92101</setting>  <!-- US ZIP or Canadian postal code -->
 ```
 
+### Core Settings
+```xml
+<setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
+<setting id="redays">7</setting>        <!-- Cache retention days (match days) -->
+<setting id="refresh">48</setting>      <!-- Cache refresh window (hours, 0=disabled) -->
+<setting id="lineup">Local Over the Air Broadcast</setting>  <!-- Lineup description -->
+<setting id="lineupcode">lineupId</setting>  <!-- Internal lineup identifier -->
+<setting id="device">-</setting>        <!-- Device identifier for API -->
+```
+
 ### Extended Details with Multi-Language Support
 ```xml
-<setting id="xdetails">true</setting>   <!-- Download series details -->
+<setting id="xdetails">true</setting>   <!-- Download series details + enhanced metadata -->
 <setting id="xdesc">true</setting>      <!-- Enhanced descriptions with translations -->
 <setting id="langdetect">true</setting> <!-- Enable automatic language detection -->
+```
+
+### Station and Content Filtering
+```xml
+<setting id="slist"></setting>          <!-- Comma-separated station IDs (empty=all) -->
+<setting id="stitle">false</setting>    <!-- Safe titles (replace special chars) -->
+<setting id="epgenre">3</setting>       <!-- Genre mode: 0=none, 1=primary, 2=EIT, 3=all -->
+<setting id="epicon">1</setting>        <!-- Icon mode: 0=none, 1=series+episode, 2=episode only -->
 ```
 
 ### TVheadend Integration
@@ -208,23 +236,23 @@ Language detection disabled - all content marked as English
 <setting id="tvhurl">127.0.0.1</setting> <!-- TVH server IP -->
 <setting id="tvhport">9981</setting>    <!-- TVH port -->
 <setting id="tvhmatch">true</setting>   <!-- Use TVH channel filtering -->
-```
-
-### Performance Tuning
-```xml
-<setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
-<setting id="redays">7</setting>        <!-- Cache retention (match days) -->
-<setting id="refresh">48</setting>      <!-- Cache refresh window (hours) -->
+<setting id="chmatch">true</setting>    <!-- Enable channel number matching -->
+<setting id="usern"></setting>          <!-- TVH username (optional) -->
+<setting id="passw"></setting>          <!-- TVH password (optional) -->
 ```
 
 ## Performance & Caching
 
-### Intelligent Cache System
+### Cache System
 
-The modular design includes a sophisticated caching system:
+The modular design includes a sophisticated caching system with major performance improvements:
+
+#### Language Detection Cache
+- **Smart Reuse**: Extracts language information from previous XMLTV files to avoid redundant langdetect calls
+- **Performance Gain**: 95-100% cache efficiency typical, reducing generation time from ~15 minutes to ~2-3 minutes
 
 #### Guide Cache (3-hour blocks)
-- **Smart Refresh**: Only refreshes first 48 hours
+- **Smart Refresh**: Only refreshes first 48 hours (tunable)
 - **Block Reuse**: Reuses cached blocks outside refresh window
 - **Safe Updates**: Backup/restore on failed downloads
 
@@ -241,6 +269,10 @@ The modular design includes a sophisticated caching system:
 ### Performance Statistics Example
 
 ```
+Language cache loaded: 13234 programs cached
+Language cache performance:
+  Cache efficiency: 100.0% (4693 hits / 4693 lookups)
+
 Extended details processing completed:
   Total unique series: 1137
   Downloads attempted: 45        ← Only new series
@@ -252,20 +284,20 @@ Guide download completed:
   Cache efficiency: 85.7% reused
   Success rate: 100.0%
 
-Language detection statistics (using langdetect library):
+Language detection statistics (using langdetect library with cache):
   French: 1424 episodes (35.6%)
   English: 2497 episodes (62.4%)
   Spanish: 81 episodes (2.0%)
 ```
 
-**Note**: Language statistics only appear when langdetect is enabled and available. Without langdetect, all content is marked as English.
+**Note**: Language statistics only appear when langdetect is enabled and available. With the new cache system, most language detections are reused from previous runs, dramatically improving performance.
 
 ## Command-Line Interface
 
 ### XMLTV Baseline Capabilities
 
 ```bash
-tv_grab_gracenote2epg --description       # Show grabber description
+tv_grab_gracenote2epg --description      # Show grabber description
 tv_grab_gracenote2epg --version          # Show version
 tv_grab_gracenote2epg --capabilities     # Show capabilities
 ```
@@ -325,12 +357,12 @@ TVheadend's EPG database can have conflicts when switching between different gra
 
 ### 🛠️ **Complete Migration Procedure**
 
-Follow these steps **exactly** for a successful migration:
+Follow these steps for a successful migration:
 
 #### **Step 1: Configure EPG Grabbers**
 1. **TVheadend Web Interface** → **Configuration** → **Channel/EPG** → **EPG Grabber Modules**
 2. **Enable**: `tv_grab_gracenote2epg` ✅
-3. **Disable**: All other grabbers (especially `tv_grab_zap2epg`) ❌
+3. **Disable**: All other grabbers ❌
 4. **Save Configuration**
 
 #### **Step 2: Stop TVheadend**
@@ -340,9 +372,6 @@ sudo synopkg stop tvheadend
 
 # Standard Linux
 sudo systemctl stop tvheadend
-
-# Wait for complete shutdown
-sleep 5
 ```
 
 #### **Step 3: Clean EPG Database and Cache**
@@ -424,27 +453,14 @@ Your EPG should now show:
 
 **Problem**: Channels detected but no programs after re-run
 - **Solution**: Repeat Step 3 (database cleanup) and try again
-- **Cause**: Residual conflicts from previous grabber
 
 **Problem**: No channels detected at all  
 - **Solution**: Check `gracenote2epg.xml` configuration
-- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`)
-
-**Problem**: Some channels missing
-- **Solution**: Check TVheadend channel configuration
-- **Verify**: Enabled channels in TVheadend match your lineup
+- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`, `usern`, `passw`, `tvhmatch`, `chmatch`)
 
 **Problem**: Extended details not showing
 - **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
 - **Note**: First run downloads 1000+ series details (normal delay)
-
-### 📝 **Why This Process is Necessary**
-
-1. **Database Schema Differences**: Different grabbers may use incompatible data structures
-2. **Channel ID Conflicts**: IDs like `45867.zap2epg` vs `45867.gracenote2epg` cause conflicts  
-3. **Timestamp Format Issues**: Different time formats can cause silent rejection
-4. **Cache Corruption**: Mixed cache data from different sources
-5. **TVheadend Logic**: TVheadend requires clean state for proper grabber switching
 
 ### 🔄 **Switching Back to Previous Grabber**
 
@@ -453,55 +469,23 @@ If you need to switch back to your previous grabber:
 2. **Always clean EPG database** when switching grabbers
 3. **Never run multiple XMLTV grabbers** simultaneously
 
-**Remember**: Always perform a **complete EPG reset** when changing grabbers to ensure proper data ingestion.
-
 ## Development
 
 ### Project Structure for Development
 
 ```bash
 tv_grab_gracenote2epg/
-├── gracenote2epg/              # Main package
+├── gracenote2epg/                             # Main package
 │   ├── __init__.py
-│   ├── gracenote2epg_*.py      # Individual modules
-│   └── __main__.py             # Module entry point
-├── gracenote2epg.py            # Main script
-├── gracenote2epg.xml           # Config template
-├── setup.py                    # Installation setup
-├── README.md                   # This file
-├── LICENSE                     # GPL v3 license
+│   ├── gracenote2epg_*.py                     # Individual modules
+│   └── __main__.py                            # Module entry point
+├── gracenote2epg.py                           # Main script
+├── gracenote2epg.xml                          # Config template
+├── setup.py                                   # Installation setup
+├── README.md                                  # This file
+├── LICENSE                                    # GPL v3 license
 └── tv_grab_gracenote2epg -> gracenote2epg.py  # Symlink
 ```
-
-
-
-## Migration from script.module.zap2epg / tv_grab_zap2epg
-
-### Differences from Original
-
-- **Modular Python Architecture**: Enhanced code organization and maintainability
-- **No Dependencies on Bash**: Pure Python implementation  
-- **Same Configuration**: Uses identical XML configuration format (zap2epg.xml/gracenote2epg.xml)
-- **Same Cache Structure**: Compatible with existing cache files
-- **Enhanced Logging**: Configurable output with proper stdout/stderr separation
-- **Improved Error Handling**: Better WAF protection and retry logic
-- **Enhanced Language Detection**: Optional langdetect integration for better accuracy
-
-### Migration Steps
-
-1. **Backup existing configuration**: Your existing `zap2epg.xml` works as-is (rename to `gracenote2epg.xml`)
-2. **Install gracenote2epg**: `pip install .`
-3. **Install optional dependencies**: `pip install langdetect` (recommended)
-4. **Update scripts**: Replace `tv_grab_zap2epg` calls with `tv_grab_gracenote2epg`
-5. **Test functionality**: Run with `--console` to verify operation
-
-### Compatibility
-
-- ✅ **Configuration Files**: 100% compatible with zap2epg.xml format
-- ✅ **Cache Files**: Reuses existing zap2epg cache structure
-- ✅ **XMLTV Output**: Identical format to original
-- ✅ **TVheadend Integration**: Same API and behavior as original zap2epg
-- ✅ **Command-line Arguments**: Enhanced interface with new logging options
 
 ## Troubleshooting
 
@@ -555,14 +539,21 @@ GPL v3 - Same as original script.module.zap2epg project
 This project was originally designed to be easily setup in Kodi for use as a grabber for TVheadend. This version builds upon edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and adds Python modular architecture.
 
 **Original Sources:**
-- **edit4ever**: Original **script.module.zap2epg** project and Python3 branch
-- **th0ma7**: tv_grab_zap2epg improvements based on PR edit4ever/script.module.zap2epg#37 (much thanks for your great original work @edit4ever !!!)
+- **edit4ever**: Original **script.module.zap2epg** project (much thanks for your great original work @edit4ever !!!)
+- **th0ma7**: tv_grab_zap2epg improvements based on PR edit4ever/script.module.zap2epg#37
 
-This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining full compatibility with existing configurations and cache formats.
+This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining compatibility with existing configurations and cache formats.
 
 ## Version History
 
-### 1.1 - Current Release
+### 1.2 - Current Release
+- **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections
+- **Enhanced XMLTV Metadata**: New DTD-compliant fields (language, country, video, audio) controlled by xdetails configuration
+- **Modular Language Detection**: New gracenote2epg_language module with LanguageDetector class for better architecture
+- **Performance Optimization**: Eliminates redundant `langdetect` calls, reducing XMLTV generation time from ~15 minutes to ~2-3 minutes
+- **Smart Metadata Logic**: Country detection from zipcode format, stereo audio from tags, aspect ratio from content age
+
+### 1.1 - Previous Release
 - **Progress Tracking**: Real-time progress indicators for long operations
 - **Migration Documentation**: Complete migration guide from other EPG grabbers
 - **Directory Permissions Fix**: Create directories with proper 755 permissions instead of 777
