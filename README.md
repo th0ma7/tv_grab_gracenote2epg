@@ -538,7 +538,7 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 
 ## Version History
 
-### 1.3 - Current Release
+### 1.3 - Next Release
 **TODO**:
 - **Country**: Use actual country of origin, if unavailable discard
 - **Categories Translation**: Use en|fr|es categories when applicable
