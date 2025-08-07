@@ -6,6 +6,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 
 ## Key Features
 
+- **✅ Strict XMLTV DTD Compliance**: Now following strict DTD compliance
 - **🚀 Intelligent Language Cache**: 95-100% cache efficiency with automatic language detection reuse
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
@@ -502,17 +503,8 @@ wget http://xmltv.cvs.sourceforge.net/viewvc/*checkout*/xmltv/xmltv/xmltv.dtd
 xmllint --noout --dtdvalid xmltv.dtd xmltv.xml
 ```
 
-**Expected DTD Validation Result:**
-The XMLTV output is mostly DTD-compliant except for one intentional extension:
+**Expected DTD Validation Result:** The XMLTV output is expected to be DTD-compliant.
 
-```xml
-<credits>
-    <actor role="Max Perkins" src="https://zap2it.tmsimg.com/assets/71352_v9_bb.jpg">Colin Firth</actor>
-    <actor role="Thomas Wolfe" src="https://zap2it.tmsimg.com/assets/71369_v9_bb.jpg">Jude Law</actor>
-</credits>
-```
-
-**Note**: The `src=` attribute in actor tags is **not part of the strict XMLTV DTD** but can be used by XMLTV consumers for displaying actor photos. This extension provides enhanced program information without breaking XMLTV parsing.
 
 ### Debug Mode
 
@@ -539,12 +531,25 @@ GPL v3 - Same as original script.module.zap2epg project
 This project was originally designed to be easily setup in Kodi for use as a grabber for TVheadend. This version builds upon edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and adds Python modular architecture.
 
 **Original Sources:**
-- **edit4ever**: Original **script.module.zap2epg** project (much thanks for your great original work @edit4ever !!!)
+- **edit4ever**: Original **script.module.zap2epg** project (much thanks to @edit4ever)
 - **th0ma7**: tv_grab_zap2epg improvements based on PR edit4ever/script.module.zap2epg#37
 
 This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining compatibility with existing configurations and cache formats.
 
 ## Version History
+
+### 1.3 - Current Release
+**TODO**:
+- **Country**: Use actual country of origin, if unavailable discard
+- **Categories Translation**: Use en|fr|es categories when applicable
+- **Extended Description**: Revalidate `true` vs `false` output conditions
+
+**Fixed issues**:
+- **Credits**: Use proper `<image>` sub-element instead of src attribute - now scrict XMLTV DTD compliant
+- **`episode-num xmltv_ns`**: Use spaces around dots per DTD standard
+- **Stereo detection**: Fixed to properly detect STEREO tag
+- **Rating system**: Enhanced with MPAA system support
+- **Language Cache**: Allow handing of malformed XML when scrubbing previous xmltv
 
 ### 1.2 - Current Release
 - **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections
