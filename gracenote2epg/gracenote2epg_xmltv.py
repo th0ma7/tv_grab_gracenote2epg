@@ -1,5 +1,5 @@
 """
-gracenote2epg.gracenote2epg_xmltv - XMLTV generation
+gracenote2epg.gracenote2epg_xmltv - XMLTV generation (DTD Compliant)
 
 Handles generation of XMLTV files with intelligent description formatting,
 station information, and program details with multi-language support.
@@ -20,7 +20,7 @@ from .gracenote2epg_language import LanguageDetector
 
 
 class XmltvGenerator:
-    """Generates XMLTV files from parsed guide data"""
+    """Generates XMLTV files from parsed guide data - DTD Compliant"""
 
     def __init__(self, cache_manager: CacheManager):
         self.cache_manager = cache_manager
@@ -34,7 +34,7 @@ class XmltvGenerator:
                        xmltv_file: Path) -> bool:
         """Generate XMLTV file with automatic backup and optimized language detection"""
         try:
-            logging.info('=== XMLTV Generation ===')
+            logging.info('=== XMLTV Generation (DTD Compliant) ===')
 
             # Initialize language detector with configuration
             langdetect_enabled = config.get('langdetect', True)
@@ -154,35 +154,22 @@ class XmltvGenerator:
         missing_desc_count = 0
 
         # Configuration values
-        use_extended_desc = config.get('xdesc', False)      # Use extended series description
-        use_extended_details = config.get('xdetails', False) # Add extra details (• S37E13 | CC)
-        use_actor_photos = config.get('xdetails', False)    # Actor photos with extended details
-        need_extended_download = use_extended_desc or use_extended_details  # Download if either is true
+        use_extended_desc = config.get('xdesc', False)                     # Use extended series description
+        use_extended_details = config.get('xdetails', False)               # Add extra details (• S37E13 | CC)
+        use_actor_photos = config.get('xdetails', False)                   # Actor photos with extended details
+        need_extended_download = use_extended_desc or use_extended_details # Download if either is true
         safe_titles = config.get('stitle', False)
         ep_genre = config.get('epgenre', '3')
         ep_icon = config.get('epicon', '1')
 
         try:
             logging.info('Writing Episodes to xmltv.xml file...')
-            logging.info('Configuration: xdesc=%s (use extended series description), xdetails=%s (add extra info + metadata)',
-                        use_extended_desc, use_extended_details)
-            if need_extended_download:
-                logging.info('Extended details download enabled')
-            else:
-                logging.info('Using basic guide data only')
-
-            if use_extended_details:
-                logging.info('Enhanced metadata enabled: language, country, video, audio elements will be included')
-            else:
-                logging.info('Enhanced metadata disabled: only basic XMLTV elements will be included')
+            logging.info('Configuration: xdesc=%s, xdetails=%s', use_extended_desc, use_extended_details)
 
             # Count total episodes for progress tracking
-            total_episodes = 0
-            for station_id, station_data in schedule.items():
-                for episode_key, episode_data in station_data.items():
-                    if not episode_key.startswith("ch"):
-                        if episode_data.get('epstart'):
-                            total_episodes += 1
+            total_episodes = sum(1 for station_id, station_data in schedule.items()
+                               for episode_key, episode_data in station_data.items()
+                               if not episode_key.startswith("ch") and episode_data.get('epstart'))
 
             logging.info('Total episodes to process: %d', total_episodes)
 
@@ -202,7 +189,7 @@ class XmltvGenerator:
 
                         processed_episodes += 1
 
-                        # Log progress every 5% or every 1000 episodes, whichever is smaller
+                        # Log progress
                         if (processed_episodes - last_progress_log >= min(progress_interval, 1000) or
                             processed_episodes == total_episodes):
                             progress_percent = round((processed_episodes / total_episodes * 100)) if total_episodes > 0 else 0
@@ -210,16 +197,14 @@ class XmltvGenerator:
                                        processed_episodes, total_episodes, progress_percent)
                             last_progress_log = processed_episodes
 
-                        # === PREPARATION PHASE - BEFORE ANY XML WRITING ===
-
-                        # Time information
+                        # === PREPARATION PHASE ===
                         start_time = TimeUtils.conv_time(float(episode_data['epstart']))
                         stop_time = TimeUtils.conv_time(float(episode_data['epend'])) if episode_data.get('epend') else start_time
                         tz_offset = TimeUtils.get_timezone_offset()
 
-                        # Detect language using the language detector with caching optimization
-                        program_id = episode_data.get('epid', '')  # TMS ID unique
-                        detected_language = 'en'  # Default
+                        # Detect language
+                        program_id = episode_data.get('epid', '')
+                        detected_language = 'en'
 
                         if self.language_detector:
                             # Priority 1: Try to detect from extended description if available
@@ -236,7 +221,7 @@ class XmltvGenerator:
                                     detected_language = self.language_detector.detect_language(
                                         str(basic_desc), program_id)
 
-                        # Prepare final description
+                        # Prepare description
                         final_description = self._prepare_description(episode_data, detected_language,
                                                                     use_extended_desc, use_extended_details,
                                                                     need_extended_download)
@@ -246,11 +231,10 @@ class XmltvGenerator:
                         else:
                             missing_desc_count += 1
 
-                        # === START XMLTV PROGRAMME - STRICT DTD ORDER ===
-
+                        # === START XMLTV PROGRAMME ===
                         fh.write(f'\t<programme start="{start_time} {tz_offset}" stop="{stop_time} {tz_offset}" channel="{station_id}.gracenote2epg">\n')
 
-                        # 1. TITLE+ (obligatoire)
+                        # 1. TITLE+
                         if episode_data.get('epshow'):
                             show_title = HtmlUtils.conv_html(episode_data['epshow'])
                             fh.write(f'\t\t<title lang="{detected_language}">{show_title}</title>\n')
@@ -278,30 +262,13 @@ class XmltvGenerator:
 
                         # 7. KEYWORD* (not used)
 
-                        # 8-13. EXTENDED DETAILS BLOCK (only if xdetails=true)
+                        # 8. LANGUAGE? (only if xdetails=true)
                         if use_extended_details:
-                            # 8. LANGUAGE?
                             lang_names = {'fr': 'Français', 'en': 'English', 'es': 'Español'}
                             lang_name = lang_names.get(detected_language, 'English')
                             fh.write(f'\t\t<language>{lang_name}</language>\n')
 
-                            # 9. ORIG-LANGUAGE? (skipped - rarely available and hard to determine reliably)
-
-                            # 10. LENGTH? (already written above)
-
-                            # 11. ICON* (already written below)
-
-                            # 12. URL* (not used)
-
-                            # 13. COUNTRY*
-                            country_code = 'US'  # Default
-                            zipcode = config.get('zipcode', '')
-                            if zipcode:
-                                if re.match(r'^[A-Z][0-9][A-Z]', zipcode.replace(' ', '')):
-                                    country_code = 'CA'
-                                elif zipcode.isdigit() and len(zipcode) == 5:
-                                    country_code = 'US'
-                            fh.write(f'\t\t<country>{country_code}</country>\n')
+                        # 9. ORIG-LANGUAGE? (not used)
 
                         # 10. LENGTH?
                         if episode_data.get('eplength'):
@@ -312,9 +279,18 @@ class XmltvGenerator:
 
                         # 12. URL* (not used)
 
-                        # 13. COUNTRY* (already written above if xdetails=true)
+                        # 13. COUNTRY* (only if xdetails=true)
+                        if use_extended_details:
+                            country_code = 'US'
+                            zipcode = config.get('zipcode', '')
+                            if zipcode:
+                                if re.match(r'^[A-Z][0-9][A-Z]', zipcode.replace(' ', '')):
+                                    country_code = 'CA'
+                                elif zipcode.isdigit() and len(zipcode) == 5:
+                                    country_code = 'US'
+                            fh.write(f'\t\t<country>{country_code}</country>\n')
 
-                        # 14. EPISODE-NUM*
+                        # 14. EPISODE-NUM* (FIXED: Proper xmltv_ns format with spaces)
                         dd_progid = episode_data.get('epid', '')
                         if dd_progid and len(dd_progid) >= 4:
                             fh.write(f'\t\t<episode-num system="dd_progid">{dd_progid[:-4]}.{dd_progid[-4:]}</episode-num>\n')
@@ -324,20 +300,23 @@ class XmltvGenerator:
                             episode_num = str(episode_data['epen']).zfill(2)
                             fh.write(f'\t\t<episode-num system="onscreen">S{season}E{episode_num}</episode-num>\n')
 
-                            # XMLTV numbering (zero-based)
+                            # XMLTV numbering with spaces and proper format (zero-based)
                             season_xmltv = int(episode_data['epsn']) - 1
                             episode_xmltv = int(episode_data['epen']) - 1
-                            fh.write(f'\t\t<episode-num system="xmltv_ns">{season_xmltv}.{episode_xmltv}.</episode-num>\n')
+                            # Format: "season . episode . part/total" with spaces
+                            fh.write(f'\t\t<episode-num system="xmltv_ns">{season_xmltv} . {episode_xmltv} . </episode-num>\n')
 
                         # 15-16. VIDEO/AUDIO BLOCK (only if xdetails=true)
                         if use_extended_details:
+                            # Get release year once for both video and audio
+                            release_year = episode_data.get('epyear')
+
                             # 15. VIDEO?
                             fh.write('\t\t<video>\n')
                             fh.write('\t\t\t<present>yes</present>\n')
                             fh.write('\t\t\t<colour>yes</colour>\n')
 
-                            # Aspect ratio - modern default, 4:3 for old movies
-                            release_year = episode_data.get('epyear')
+                            # Aspect ratio based on age
                             if release_year and str(release_year).isdigit() and int(release_year) < 1960:
                                 fh.write('\t\t\t<aspect>4:3</aspect>\n')
                             else:
@@ -348,16 +327,21 @@ class XmltvGenerator:
                             fh.write('\t\t<audio>\n')
                             fh.write('\t\t\t<present>yes</present>\n')
 
-                            # Detect STEREO from tags
+                            # Proper stereo detection from tags
                             tags = episode_data.get('eptags', [])
                             has_stereo = False
-                            if isinstance(tags, (list, tuple)):
-                                has_stereo = 'STEREO' in tags
-                            else:
-                                tag_str = str(tags) if tags else ''
-                                has_stereo = 'STEREO' in tag_str
 
-                            stereo_value = 'yes' if has_stereo else 'no'
+                            if isinstance(tags, list):
+                                has_stereo = 'STEREO' in tags or 'Stereo' in tags or 'DD 5.1' in tags or 'DD' in tags
+                            elif isinstance(tags, str):
+                                has_stereo = 'STEREO' in tags.upper()
+
+                            # Modern content defaults to stereo
+                            if not has_stereo and release_year:
+                                if str(release_year).isdigit() and int(release_year) >= 1990:
+                                    has_stereo = True  # Assume stereo for modern content
+
+                            stereo_value = 'stereo' if has_stereo else 'mono'
                             fh.write(f'\t\t\t<stereo>{stereo_value}</stereo>\n')
                             fh.write('\t\t</audio>\n')
 
@@ -386,15 +370,12 @@ class XmltvGenerator:
                         if episode_data.get('eptags') and 'CC' in episode_data['eptags']:
                             fh.write('\t\t<subtitles type="teletext" />\n')
 
-                        # 22. RATING*
-                        if episode_data.get('eprating'):
-                            fh.write(f'\t\t<rating>\n\t\t\t<value>{episode_data["eprating"]}</value>\n\t\t</rating>\n')
+                        # 22. RATING* (ENHANCED: Support for MPAA system)
+                        self._write_enhanced_ratings(fh, episode_data)
 
                         # 23. STAR-RATING*
                         if episode_data.get('epstar'):
                             fh.write(f'\t\t<star-rating>\n\t\t\t<value>{episode_data["epstar"]}/4</value>\n\t\t</star-rating>\n')
-
-                        # 24-25. REVIEW*, IMAGE* (not used)
 
                         fh.write('\t</programme>\n')
                         self.episode_count += 1
@@ -406,57 +387,137 @@ class XmltvGenerator:
             logging.info('Description statistics: Episodes=%d, Enhanced_desc=%d, Missing_desc=%d',
                         self.episode_count, enhanced_desc_count, missing_desc_count)
 
-            if use_extended_details:
-                logging.info('Extended details added to episodes (• info format)')
-                logging.info('Enhanced metadata added: language, country, video, audio elements')
-            if use_extended_desc:
-                logging.info('Extended series descriptions used when available')
-            if not use_extended_details and not use_extended_desc:
-                logging.info('Basic guide data only (no extended features or enhanced metadata)')
-
-            # Report missing descriptions
-            if missing_desc_count > 0:
-                logging.info('Missing descriptions: %d episodes', missing_desc_count)
-
         except Exception as e:
             logging.exception('Exception in _print_episodes: %s', str(e))
+
+    def _write_credits_dtd_compliant(self, fh, episode_data: Dict, use_actor_photos: bool = True):
+        """Write cast and crew credits - FIXED: DTD compliant with proper image sub-elements"""
+        credits = episode_data.get('epcredits')
+        if credits and isinstance(credits, list):
+            fh.write('\t\t<credits>\n')
+
+            # Valid DTD roles in order
+            valid_roles = {
+                'director': 'director',
+                'actor': 'actor',
+                'writer': 'writer',
+                'adapter': 'adapter',
+                'producer': 'producer',
+                'composer': 'composer',
+                'editor': 'editor',
+                'presenter': 'presenter',
+                'commentator': 'commentator',
+                'guest': 'guest',
+                'voice': 'actor',
+                'narrator': 'presenter',
+                'host': 'presenter',
+            }
+
+            for credit in credits:
+                if isinstance(credit, dict):
+                    original_role = credit.get('role', '').lower()
+                    name = credit.get('name', '')
+                    character = credit.get('characterName', '')
+                    asset_id = credit.get('assetId', '')
+
+                    # Map to valid DTD role
+                    if original_role in valid_roles:
+                        dtd_role = valid_roles[original_role]
+
+                        if dtd_role and name:
+                            # DTD compliant format with image as sub-element
+                            if character and dtd_role == 'actor':
+                                # Actor with character role
+                                fh.write(f'\t\t\t<{dtd_role} role="{HtmlUtils.conv_html(character)}">')
+                                fh.write(f'{HtmlUtils.conv_html(name)}')
+
+                                # Add image as sub-element if available
+                                if use_actor_photos and asset_id:
+                                    photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
+                                    fh.write(f'\n\t\t\t\t<image type="person">{photo_url}</image>\n\t\t\t')
+
+                                fh.write(f'</{dtd_role}>\n')
+                            else:
+                                # Other roles or actors without character
+                                fh.write(f'\t\t\t<{dtd_role}>')
+                                fh.write(f'{HtmlUtils.conv_html(name)}')
+
+                                # Add image as sub-element if available
+                                if use_actor_photos and asset_id and dtd_role in ['actor', 'director', 'presenter']:
+                                    photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
+                                    fh.write(f'\n\t\t\t\t<image type="person">{photo_url}</image>\n\t\t\t')
+
+                                fh.write(f'</{dtd_role}>\n')
+
+                            # Log mapping for visibility
+                            if original_role == 'host':
+                                logging.debug('Host %s mapped to presenter (DTD compliant)', name)
+
+            fh.write('\t\t</credits>\n')
+
+    def _write_enhanced_ratings(self, fh, episode_data: Dict):
+        """Write enhanced rating information with MPAA system support"""
+        rating = episode_data.get('eprating')
+        if rating:
+            # Map common ratings to MPAA system
+            mpaa_ratings = {
+                'G': 'G',
+                'PG': 'PG',
+                'PG-13': 'PG-13',
+                'R': 'R',
+                'NC-17': 'NC-17',
+                'TV-Y': 'TV-Y',
+                'TV-Y7': 'TV-Y7',
+                'TV-G': 'TV-G',
+                'TV-PG': 'TV-PG',
+                'TV-14': 'TV-14',
+                'TV-MA': 'TV-MA'
+            }
+
+            # Check if it's an MPAA rating
+            if rating in mpaa_ratings:
+                fh.write(f'\t\t<rating system="MPAA">\n')
+                fh.write(f'\t\t\t<value>{rating}</value>\n')
+                fh.write(f'\t\t</rating>\n')
+            else:
+                # Generic rating
+                fh.write(f'\t\t<rating>\n')
+                fh.write(f'\t\t\t<value>{rating}</value>\n')
+                fh.write(f'\t\t</rating>\n')
 
     def _prepare_description(self, episode_data: Dict, detected_language: str,
                            use_extended_desc: bool, use_extended_details: bool,
                            need_extended_download: bool) -> Optional[str]:
         """Prepare final description based on xdesc and xdetails settings"""
         try:
-            # Step 1: Determine base description source
             base_description = None
 
             if use_extended_desc and need_extended_download:
-                # Try extended series description first (from downloaded details)
                 extended_desc = episode_data.get('epseriesdesc')
                 if extended_desc and str(extended_desc).strip():
                     base_description = str(extended_desc).strip()
                     logging.debug('Using extended series description for %s',
                                  episode_data.get('epshow', 'Unknown'))
                 else:
-                    # Fallback to basic description from guide
-                    basic_desc = episode_data.get('epdesc')  # This is shortDesc from JSON
+                    basic_desc = episode_data.get('epdesc')
                     base_description = str(basic_desc).strip() if basic_desc else ''
                     logging.debug('Extended description not available, using basic for %s',
                                  episode_data.get('epshow', 'Unknown'))
             else:
                 # Use basic description from guide (shortDesc)
-                basic_desc = episode_data.get('epdesc')  # This is shortDesc from JSON
+                basic_desc = episode_data.get('epdesc')
                 base_description = str(basic_desc).strip() if basic_desc else ''
                 logging.debug('Using basic guide description for %s',
                              episode_data.get('epshow', 'Unknown'))
 
-            # Step 2: Add extended details if xdetails=true
+            # Add extended details if xdetails=true
             if base_description:
                 if use_extended_details:
                     # Add extra info (• S37E13 | CC, year, rating, etc.) from guide data
                     return self._add_enhanced_info_to_basic_desc(
                         base_description, episode_data, detected_language)
                 else:
-                    # Use description as-is (no • S37E13 | CC)
+                    # Use description as-is
                     return base_description
 
             return None
@@ -503,7 +564,7 @@ class XmltvGenerator:
                 rated_text = self.language_detector.get_translated_term('rated', language) if self.language_detector else 'Rated'
                 additional_info.append(f"{rated_text}: {episode_data['eprating']}")
 
-            # Add flags with translations (DTD compliant - all in description)
+            # Add flags with translations
             flags = []
             if episode_data.get('epflag') and isinstance(episode_data['epflag'], (list, tuple)):
                 if 'New' in episode_data['epflag']:
@@ -528,7 +589,6 @@ class XmltvGenerator:
             if flags:
                 additional_info.append(' | '.join(flags))
 
-            # Use bullet point instead of newline (like zap2epg, DTD compliant)
             if additional_info:
                 info_str = ' | '.join(additional_info)
                 enhanced_description = f"{base_desc} • {info_str}"
@@ -542,68 +602,6 @@ class XmltvGenerator:
             logging.warning('Error enhancing basic description for episode %s: %s',
                           episode_data.get('epid', 'unknown'), str(e))
             return base_desc
-
-    def _write_credits_dtd_compliant(self, fh, episode_data: Dict, use_actor_photos: bool = True):
-        """Write cast and crew credits - DTD compliant with Host support"""
-        credits = episode_data.get('epcredits')
-        if credits and isinstance(credits, list):
-            fh.write('\t\t<credits>\n')
-
-            # Valid DTD roles in order: director, actor, writer, adapter, producer, composer, editor, presenter, commentator, guest
-            valid_roles = {
-                'director': 'director',
-                'actor': 'actor',
-                'writer': 'writer',
-                'adapter': 'adapter',
-                'producer': 'producer',
-                'composer': 'composer',
-                'editor': 'editor',
-                'presenter': 'presenter',
-                'commentator': 'commentator',
-                'guest': 'guest',
-                'voice': 'actor',  # Map voice actors to actor (DTD compliant)
-                'narrator': 'presenter',  # Map narrator to presenter
-                'host': 'presenter',  # Map host to presenter (DTD compliant)
-            }
-
-            for credit in credits:
-                if isinstance(credit, dict):
-                    original_role = credit.get('role', '').lower()
-                    name = credit.get('name', '')
-                    character = credit.get('characterName', '')
-                    asset_id = credit.get('assetId', '')
-
-                    # Map to valid DTD role
-                    if original_role in valid_roles:
-                        dtd_role = valid_roles[original_role]
-
-                        if dtd_role and name:
-                            # Build the credit tag with photo if available
-                            if use_actor_photos and asset_id and character:
-                                # With photo and character name
-                                photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                fh.write(f'\t\t\t<{dtd_role} role="{HtmlUtils.conv_html(character)}" src="{photo_url}">{HtmlUtils.conv_html(name)}</{dtd_role}>\n')
-                                logging.debug('Added %s photo for %s (%s)', dtd_role, name, character)
-                            elif use_actor_photos and asset_id:
-                                # With photo but no character name
-                                photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                fh.write(f'\t\t\t<{dtd_role} src="{photo_url}">{HtmlUtils.conv_html(name)}</{dtd_role}>\n')
-                                logging.debug('Added %s photo for %s', dtd_role, name)
-                            elif character and dtd_role == 'actor':
-                                # With character name but no photo (only for actors)
-                                fh.write(f'\t\t\t<{dtd_role} role="{HtmlUtils.conv_html(character)}">{HtmlUtils.conv_html(name)}</{dtd_role}>\n')
-                            else:
-                                # Name only
-                                fh.write(f'\t\t\t<{dtd_role}>{HtmlUtils.conv_html(name)}</{dtd_role}>\n')
-
-                            # Log Host mapping for visibility
-                            if original_role == 'host':
-                                logging.debug('Host %s mapped to presenter (DTD compliant)', name)
-                    else:
-                        # Skip unsupported roles
-                        logging.debug('Skipping unsupported credit role: %s for %s', original_role, name)
-
-            fh.write('\t\t</credits>\n')
 
     def _write_program_icons(self, fh, episode_data: Dict, ep_icon: str, episode_key: str):
         """Write program icon information"""
@@ -684,7 +682,6 @@ class XmltvGenerator:
         genre_list = []
         all_genres = ep_genres if ep_genres else ep_filter
 
-        # Complex EIT mapping logic (simplified)
         for genre in all_genres:
             if genre != "Comedy":
                 genre_list.append(genre)
@@ -694,6 +691,5 @@ class XmltvGenerator:
             genre_list.insert(0, "Movie / Drama")
         if any('News' in g for g in genre_list):
             genre_list.insert(0, "News / Current affairs")
-        # Add more EIT mappings as needed
 
         return genre_list
