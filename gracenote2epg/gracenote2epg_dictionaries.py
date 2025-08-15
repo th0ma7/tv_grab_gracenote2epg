@@ -8,9 +8,8 @@ and Spanish translations with fallback mechanisms.
 
 import html
 import logging
-import os
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 # Try to import polib for .po file support
 try:
@@ -262,101 +261,3 @@ def get_translation_statistics() -> Dict[str, int]:
     """Get translation statistics for all loaded languages"""
     manager = get_translation_manager()
     return manager.get_statistics()
-
-
-# Legacy functions for backward compatibility with hardcoded categories
-def get_all_categories() -> List[str]:
-    """Get list of common TV categories (for reference/testing)"""
-    return [
-        '3x3 basketball', 'action', 'action sports', 'adventure', 'agriculture',
-        'american history', 'ancient history', 'animals', 'animated', 'anime',
-        'anthology', 'archery', 'art', 'arts/crafts', 'auction', 'auto',
-        'auto racing', 'baseball', 'basketball', 'beach volleyball', 'bicycle',
-        'biography', 'books & literature', 'bull riding', 'bus./financial',
-        'children', 'collectibles', 'comedy', 'comedy drama', 'community',
-        'competition reality', 'computers', 'consumer', 'cooking', 'crime',
-        'crime drama', 'dance', 'dark comedy', 'docudrama', 'documentary',
-        'drag racing', 'drama', 'educational', 'entertainment', 'environment',
-        'event', 'exercise', 'family', 'fantasy', 'fashion', 'fishing',
-        'football', 'game show', 'gaming', 'gay/lesbian', 'golf', 'health',
-        'historical drama', 'history', 'holiday', 'home improvement', 'horror',
-        'horse racing', 'house/garden', 'how-to', 'hunting', 'interview',
-        'kayaking', 'law', 'lgbtq', 'martial arts', 'medical', 'military',
-        'miniseries', 'motorsports', 'movie', 'multi-sport event', 'musical',
-        'musical comedy', 'music', 'mystery', 'nature', 'news', 'newsmagazine',
-        'outdoors', 'paranormal', 'political satire', 'politics', 'pro wrestling',
-        'public affairs', 'reality', 'religious', 'romance', 'romantic comedy',
-        'science', 'science fiction', 'self improvement', 'shopping', 'sitcom',
-        'soap', 'soccer', 'special', 'sports', 'sports talk', 'standup',
-        'sumo wrestling', 'talk', 'technology', 'thriller', 'track/field',
-        'travel', 'variety', 'volleyball', 'war', 'weather', 'western',
-        'world history'
-    ]
-
-
-def create_po_template(output_file: Path, categories: Optional[List[str]] = None):
-    """
-    Create a .po template file with all translatable strings
-
-    Args:
-        output_file: Path to output .pot template file
-        categories: Optional list of categories to include
-    """
-    if not POLIB_AVAILABLE:
-        raise ImportError('polib is required to create .po files: pip install polib')
-
-    if categories is None:
-        categories = get_all_categories()
-
-    # Common terms that need translation
-    terms = ['rated', 'new', 'premiere', 'finale', 'live', 'premiered']
-
-    # Language names
-    language_names = ['English', 'French', 'Spanish']
-
-    # Create new POFile
-    po = polib.POFile()
-
-    # Add metadata
-    po.metadata = {
-        'Project-Id-Version': 'gracenote2epg 1.3',
-        'POT-Creation-Date': '',
-        'PO-Revision-Date': '',
-        'Last-Translator': '',
-        'Language-Team': '',
-        'MIME-Version': '1.0',
-        'Content-Type': 'text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding': '8bit',
-    }
-
-    # Add categories
-    for category in sorted(categories):
-        entry = polib.POEntry(
-            msgid=category,
-            msgstr='',
-            comment=f'TV program category: {category}'
-        )
-        po.append(entry)
-
-    # Add terms
-    for term in terms:
-        entry = polib.POEntry(
-            msgid=term,
-            msgstr='',
-            comment=f'Status term: {term}'
-        )
-        po.append(entry)
-
-    # Add language names
-    for lang_name in language_names:
-        entry = polib.POEntry(
-            msgid=lang_name,
-            msgstr='',
-            comment=f'Language name: {lang_name}'
-        )
-        po.append(entry)
-
-    # Save template
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    po.save(str(output_file))
-    logging.info('Created .po template: %s (%d entries)', output_file, len(po))
