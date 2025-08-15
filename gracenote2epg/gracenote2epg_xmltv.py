@@ -391,7 +391,7 @@ class XmltvGenerator:
             logging.exception('Exception in _print_episodes: %s', str(e))
 
     def _write_credits_dtd_compliant(self, fh, episode_data: Dict, use_actor_photos: bool = True):
-        """Write cast and crew credits - FIXED: DTD compliant with proper image sub-elements"""
+        """Write cast and crew credits - DTD compliant with compact image formatting"""
         credits = episode_data.get('epcredits')
         if credits and isinstance(credits, list):
             fh.write('\t\t<credits>\n')
@@ -425,16 +425,16 @@ class XmltvGenerator:
                         dtd_role = valid_roles[original_role]
 
                         if dtd_role and name:
-                            # DTD compliant format with image as sub-element
+                            # DTD compliant format with compact image formatting (no line breaks)
                             if character and dtd_role == 'actor':
                                 # Actor with character role
                                 fh.write(f'\t\t\t<{dtd_role} role="{HtmlUtils.conv_html(character)}">')
                                 fh.write(f'{HtmlUtils.conv_html(name)}')
 
-                                # Add image as sub-element if available
+                                # Add image directly after name without line break
                                 if use_actor_photos and asset_id:
                                     photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                    fh.write(f'\n\t\t\t\t<image type="person">{photo_url}</image>\n\t\t\t')
+                                    fh.write(f'<image type="person">{photo_url}</image>')
 
                                 fh.write(f'</{dtd_role}>\n')
                             else:
@@ -442,10 +442,10 @@ class XmltvGenerator:
                                 fh.write(f'\t\t\t<{dtd_role}>')
                                 fh.write(f'{HtmlUtils.conv_html(name)}')
 
-                                # Add image as sub-element if available
+                                # Add image directly after name without line break
                                 if use_actor_photos and asset_id and dtd_role in ['actor', 'director', 'presenter']:
                                     photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                    fh.write(f'\n\t\t\t\t<image type="person">{photo_url}</image>\n\t\t\t')
+                                    fh.write(f'<image type="person">{photo_url}</image>')
 
                                 fh.write(f'</{dtd_role}>\n')
 
