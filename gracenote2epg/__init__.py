@@ -23,8 +23,7 @@ from .gracenote2epg_dictionaries import (
     get_language_display_name,
     get_available_languages,
     get_translation_statistics,
-    reload_translations,
-    TranslationManager
+    reload_translations
 )
 
 __all__ = [
@@ -42,6 +41,5 @@ __all__ = [
     'get_language_display_name',
     'get_available_languages',
     'get_translation_statistics',
-    'reload_translations',
-    'TranslationManager'
+    'reload_translations'
 ]
