@@ -616,7 +616,7 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
-### 1.3 - Undergoing Release (dev)
+### 1.3 - Current Release
 - **Categories Translation**: Automatic English/French/Spanish category translation using .po files
   - Proper capitalization rules per language (Title Case for English, Sentence case for French/Spanish)
   - Smart fallback when translation files unavailable
@@ -627,14 +627,14 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 - **Rating system**: Enhanced with MPAA system support
 - **Language Cache**: Allow handling of malformed XML when scrubbing previous xmltv
 
-### 1.2 - Current Release
+### 1.2 - Previous Release
 - **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections
 - **Enhanced XMLTV Metadata**: New DTD-compliant fields (language, country, video, audio) controlled by xdetails configuration
 - **Modular Language Detection**: New gracenote2epg_language module with LanguageDetector class for better architecture
 - **Performance Optimization**: Eliminates redundant `langdetect` calls, reducing XMLTV generation time from ~15 minutes to ~2-3 minutes
 - **Smart Metadata Logic**: Country detection from zipcode format, stereo audio from tags, aspect ratio from content age
 
-### 1.1 - Previous Release
+### 1.1 - Older Release
 - **Progress Tracking**: Real-time progress indicators for long operations
 - **Migration Documentation**: Complete migration guide from other EPG grabbers
 - **Directory Permissions Fix**: Create directories with proper 755 permissions instead of 777
