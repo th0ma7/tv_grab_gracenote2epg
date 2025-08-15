@@ -385,9 +385,3 @@ class HtmlUtils:
         data = data.replace('>', '&gt;')      # > -> &gt;
 
         return data
-
-    @staticmethod
-    def conv_title_except(data: str) -> str:
-        """Convert title to proper case with exceptions"""
-        exception = "CTV CW HD ION ION: NHK PBS TV TVA"
-        return " ".join([word.title() if word not in exception else word for word in data.split(" ")])
