@@ -1,7 +1,8 @@
 """
-gracenote2epg.gracenote2epg_language - Language detection and caching
+gracenote2epg.gracenote2epg_language - Language detection and caching with category translation
 
-Handles language detection with intelligent caching for performance optimization.
+Handles language detection with intelligent caching for performance optimization
+and translation of categories and terms based on detected language.
 Now with robust XML loading that handles malformed files gracefully.
 """
 
@@ -9,7 +10,14 @@ import hashlib
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, List
+
+from .gracenote2epg_dictionaries import (
+    get_category_translation,
+    get_term_translation,
+    get_language_display_name,
+    get_translation_manager
+)
 
 
 class LanguageCache:
@@ -221,35 +229,7 @@ class LanguageCache:
 
 
 class LanguageDetector:
-    """Language detection with caching and translation support"""
-
-    # Translation dictionaries for different languages
-    TRANSLATIONS = {
-        'en': {
-            'rated': 'Rated',
-            'new': 'NEW',
-            'premiere': 'PREMIERE',
-            'finale': 'FINALE',
-            'live': 'LIVE',
-            'premiered': 'Premiered'
-        },
-        'fr': {
-            'rated': 'Classé',
-            'new': 'NOUVEAU',
-            'premiere': 'PREMIÈRE',
-            'finale': 'FINALE',
-            'live': 'EN DIRECT',
-            'premiered': 'Première diffusion'
-        },
-        'es': {
-            'rated': 'Clasificado',
-            'new': 'NUEVO',
-            'premiere': 'ESTRENO',
-            'finale': 'FINAL',
-            'live': 'EN VIVO',
-            'premiered': 'Estrenado'
-        }
-    }
+    """Language detection with caching and translation support for categories and terms"""
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -341,12 +321,39 @@ class LanguageDetector:
             logging.debug('langdetect import error, defaulting to English')
             return 'en'
 
+    def translate_category(self, category: str, target_language: str) -> str:
+        """
+        Translate category to target language
+
+        Args:
+            category: Original category name
+            target_language: Target language code (fr, en, es)
+
+        Returns:
+            Translated category name
+        """
+        return get_category_translation(category, target_language)
+
+    def translate_categories(self, categories: List[str], target_language: str) -> List[str]:
+        """
+        Translate list of categories to target language
+
+        Args:
+            categories: List of category names
+            target_language: Target language code (fr, en, es)
+
+        Returns:
+            List of translated category names
+        """
+        return [self.translate_category(cat, target_language) for cat in categories]
+
     def get_translated_term(self, term: str, language: str) -> str:
         """Get translated term for the detected language"""
-        if language in self.TRANSLATIONS and term in self.TRANSLATIONS[language]:
-            return self.TRANSLATIONS[language][term]
-        # Fallback to English
-        return self.TRANSLATIONS['en'].get(term, term.upper())
+        return get_term_translation(term, language)
+
+    def get_language_display_name(self, language_code: str, display_language: str = 'en') -> str:
+        """Get language display name in specified language"""
+        return get_language_display_name(language_code, display_language)
 
     def get_language_stats(self) -> Dict[str, int]:
         """Get language detection statistics"""

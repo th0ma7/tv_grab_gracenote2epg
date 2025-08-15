@@ -6,6 +6,7 @@ for the gracenote2epg system.
 """
 
 import gzip
+import html
 import json
 import logging
 import os
@@ -366,15 +367,23 @@ class HtmlUtils:
 
     @staticmethod
     def conv_html(data) -> str:
-        """Convert data to HTML-safe format for XMLTV"""
+        """Convert data to HTML-safe format for XMLTV with proper entity normalization"""
         if data is None:
             return ""
+
         data = str(data)
-        data = data.replace('&', '&amp;')
-        data = data.replace('"', '&quot;')
-        data = data.replace("'", '&apos;')
-        data = data.replace('<', '&lt;')
-        data = data.replace('>', '&gt;')
+
+        try:
+            data = html.unescape(data)
+        except Exception:
+            pass
+
+        data = data.replace('&', '&amp;')     # & -> &amp;
+        data = data.replace('"', '&quot;')    # " -> &quot;
+        data = data.replace("'", '&apos;')    # ' -> &apos;
+        data = data.replace('<', '&lt;')      # < -> &lt;
+        data = data.replace('>', '&gt;')      # > -> &gt;
+
         return data
 
     @staticmethod

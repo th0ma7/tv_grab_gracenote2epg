@@ -1,0 +1,525 @@
+# English translations for gracenote2epg
+# Copyright (C) 2025 gracenote2epg
+# This file is distributed under the same license as the gracenote2epg package.
+# Vincent Fortier <th0ma7@gmail.com>, 2025.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: gracenote2epg 1.3\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-08-15 08:20+0500\n"
+"PO-Revision-Date: 2025-08-15 08:20+0500\n"
+"Last-Translator: Vincent Fortier <th0ma7@gmail.com>\n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# TV program categories
+#. TV program category: 3x3 basketball
+msgid "3x3 basketball"
+msgstr ""
+
+#. TV program category: action
+msgid "action"
+msgstr ""
+
+#. TV program category: action sports
+msgid "action sports"
+msgstr ""
+
+#. TV program category: adventure
+msgid "adventure"
+msgstr ""
+
+#. TV program category: agriculture
+msgid "agriculture"
+msgstr ""
+
+#. TV program category: american history
+msgid "american history"
+msgstr ""
+
+#. TV program category: ancient history
+msgid "ancient history"
+msgstr ""
+
+#. TV program category: animals
+msgid "animals"
+msgstr ""
+
+#. TV program category: animated
+msgid "animated"
+msgstr ""
+
+#. TV program category: anime
+msgid "anime"
+msgstr ""
+
+#. TV program category: anthology
+msgid "anthology"
+msgstr ""
+
+#. TV program category: archery
+msgid "archery"
+msgstr ""
+
+#. TV program category: art
+msgid "art"
+msgstr ""
+
+#. TV program category: arts/crafts
+msgid "arts/crafts"
+msgstr ""
+
+#. TV program category: auction
+msgid "auction"
+msgstr ""
+
+#. TV program category: auto
+msgid "auto"
+msgstr ""
+
+#. TV program category: auto racing
+msgid "auto racing"
+msgstr ""
+
+#. TV program category: baseball
+msgid "baseball"
+msgstr ""
+
+#. TV program category: basketball
+msgid "basketball"
+msgstr ""
+
+#. TV program category: beach volleyball
+msgid "beach volleyball"
+msgstr ""
+
+#. TV program category: bicycle
+msgid "bicycle"
+msgstr ""
+
+#. TV program category: biography
+msgid "biography"
+msgstr ""
+
+#. TV program category: books & literature
+msgid "books & literature"
+msgstr ""
+
+#. TV program category: bull riding
+msgid "bull riding"
+msgstr ""
+
+#. TV program category: bus./financial
+msgid "bus./financial"
+msgstr ""
+
+#. TV program category: children
+msgid "children"
+msgstr ""
+
+#. TV program category: collectibles
+msgid "collectibles"
+msgstr ""
+
+#. TV program category: comedy
+msgid "comedy"
+msgstr ""
+
+#. TV program category: comedy drama
+msgid "comedy drama"
+msgstr ""
+
+#. TV program category: community
+msgid "community"
+msgstr ""
+
+#. TV program category: competition reality
+msgid "competition reality"
+msgstr ""
+
+#. TV program category: computers
+msgid "computers"
+msgstr ""
+
+#. TV program category: consumer
+msgid "consumer"
+msgstr ""
+
+#. TV program category: cooking
+msgid "cooking"
+msgstr ""
+
+#. TV program category: crime
+msgid "crime"
+msgstr ""
+
+#. TV program category: crime drama
+msgid "crime drama"
+msgstr ""
+
+#. TV program category: dance
+msgid "dance"
+msgstr ""
+
+#. TV program category: dark comedy
+msgid "dark comedy"
+msgstr ""
+
+#. TV program category: docudrama
+msgid "docudrama"
+msgstr ""
+
+#. TV program category: documentary
+msgid "documentary"
+msgstr ""
+
+#. TV program category: drag racing
+msgid "drag racing"
+msgstr ""
+
+#. TV program category: drama
+msgid "drama"
+msgstr ""
+
+#. TV program category: educational
+msgid "educational"
+msgstr ""
+
+#. TV program category: entertainment
+msgid "entertainment"
+msgstr ""
+
+#. TV program category: environment
+msgid "environment"
+msgstr ""
+
+#. TV program category: event
+msgid "event"
+msgstr ""
+
+#. TV program category: exercise
+msgid "exercise"
+msgstr ""
+
+#. TV program category: family
+msgid "family"
+msgstr ""
+
+#. TV program category: fantasy
+msgid "fantasy"
+msgstr ""
+
+#. TV program category: fashion
+msgid "fashion"
+msgstr ""
+
+#. TV program category: fishing
+msgid "fishing"
+msgstr ""
+
+#. TV program category: football
+msgid "football"
+msgstr ""
+
+#. TV program category: game show
+msgid "game show"
+msgstr ""
+
+#. TV program category: gaming
+msgid "gaming"
+msgstr ""
+
+#. TV program category: gay/lesbian
+msgid "gay/lesbian"
+msgstr ""
+
+#. TV program category: golf
+msgid "golf"
+msgstr ""
+
+#. TV program category: health
+msgid "health"
+msgstr ""
+
+#. TV program category: historical drama
+msgid "historical drama"
+msgstr ""
+
+#. TV program category: history
+msgid "history"
+msgstr ""
+
+#. TV program category: holiday
+msgid "holiday"
+msgstr ""
+
+#. TV program category: home improvement
+msgid "home improvement"
+msgstr ""
+
+#. TV program category: horror
+msgid "horror"
+msgstr ""
+
+#. TV program category: horse racing
+msgid "horse racing"
+msgstr ""
+
+#. TV program category: house/garden
+msgid "house/garden"
+msgstr ""
+
+#. TV program category: how-to
+msgid "how-to"
+msgstr ""
+
+#. TV program category: hunting
+msgid "hunting"
+msgstr ""
+
+#. TV program category: interview
+msgid "interview"
+msgstr ""
+
+#. TV program category: kayaking
+msgid "kayaking"
+msgstr ""
+
+#. TV program category: law
+msgid "law"
+msgstr ""
+
+#. TV program category: lgbtq
+msgid "lgbtq"
+msgstr ""
+
+#. TV program category: martial arts
+msgid "martial arts"
+msgstr ""
+
+#. TV program category: medical
+msgid "medical"
+msgstr ""
+
+#. TV program category: military
+msgid "military"
+msgstr ""
+
+#. TV program category: miniseries
+msgid "miniseries"
+msgstr ""
+
+#. TV program category: motorsports
+msgid "motorsports"
+msgstr ""
+
+#. TV program category: movie
+msgid "movie"
+msgstr ""
+
+#. TV program category: multi-sport event
+msgid "multi-sport event"
+msgstr ""
+
+#. TV program category: musical
+msgid "musical"
+msgstr ""
+
+#. TV program category: musical comedy
+msgid "musical comedy"
+msgstr ""
+
+#. TV program category: music
+msgid "music"
+msgstr ""
+
+#. TV program category: mystery
+msgid "mystery"
+msgstr ""
+
+#. TV program category: nature
+msgid "nature"
+msgstr ""
+
+#. TV program category: news
+msgid "news"
+msgstr ""
+
+#. TV program category: newsmagazine
+msgid "newsmagazine"
+msgstr ""
+
+#. TV program category: outdoors
+msgid "outdoors"
+msgstr ""
+
+#. TV program category: paranormal
+msgid "paranormal"
+msgstr ""
+
+#. TV program category: political satire
+msgid "political satire"
+msgstr ""
+
+#. TV program category: politics
+msgid "politics"
+msgstr ""
+
+#. TV program category: pro wrestling
+msgid "pro wrestling"
+msgstr ""
+
+#. TV program category: public affairs
+msgid "public affairs"
+msgstr ""
+
+#. TV program category: reality
+msgid "reality"
+msgstr ""
+
+#. TV program category: religious
+msgid "religious"
+msgstr ""
+
+#. TV program category: romance
+msgid "romance"
+msgstr ""
+
+#. TV program category: romantic comedy
+msgid "romantic comedy"
+msgstr ""
+
+#. TV program category: science
+msgid "science"
+msgstr ""
+
+#. TV program category: science fiction
+msgid "science fiction"
+msgstr ""
+
+#. TV program category: self improvement
+msgid "self improvement"
+msgstr ""
+
+#. TV program category: shopping
+msgid "shopping"
+msgstr ""
+
+#. TV program category: sitcom
+msgid "sitcom"
+msgstr ""
+
+#. TV program category: soap
+msgid "soap"
+msgstr ""
+
+#. TV program category: soccer
+msgid "soccer"
+msgstr ""
+
+#. TV program category: special
+msgid "special"
+msgstr ""
+
+#. TV program category: sports
+msgid "sports"
+msgstr ""
+
+#. TV program category: sports talk
+msgid "sports talk"
+msgstr ""
+
+#. TV program category: standup
+msgid "standup"
+msgstr ""
+
+#. TV program category: sumo wrestling
+msgid "sumo wrestling"
+msgstr ""
+
+#. TV program category: talk
+msgid "talk"
+msgstr ""
+
+#. TV program category: technology
+msgid "technology"
+msgstr ""
+
+#. TV program category: thriller
+msgid "thriller"
+msgstr ""
+
+#. TV program category: track/field
+msgid "track/field"
+msgstr ""
+
+#. TV program category: travel
+msgid "travel"
+msgstr ""
+
+#. TV program category: variety
+msgid "variety"
+msgstr ""
+
+#. TV program category: volleyball
+msgid "volleyball"
+msgstr ""
+
+#. TV program category: war
+msgid "war"
+msgstr ""
+
+#. TV program category: weather
+msgid "weather"
+msgstr ""
+
+#. TV program category: western
+msgid "western"
+msgstr ""
+
+#. TV program category: world history
+msgid "world history"
+msgstr ""
+
+# Status terms
+#. Status term: rated
+msgid "rated"
+msgstr ""
+
+#. Status term: new
+msgid "new"
+msgstr ""
+
+#. Status term: premiere
+msgid "premiere"
+msgstr ""
+
+#. Status term: finale
+msgid "finale"
+msgstr ""
+
+#. Status term: live
+msgid "live"
+msgstr ""
+
+#. Status term: premiered
+msgid "premiered"
+msgstr ""
+
+# Language names
+#. Language name: English
+msgid "English"
+msgstr ""
+
+#. Language name: French
+msgid "French"
+msgstr ""
+
+#. Language name: Spanish
+msgid "Spanish"
+msgstr ""

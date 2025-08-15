@@ -257,8 +257,8 @@ class XmltvGenerator:
                         if episode_data.get('epyear'):
                             fh.write(f'\t\t<date>{episode_data["epyear"]}</date>\n')
 
-                        # 6. CATEGORY*
-                        self._write_categories(fh, episode_data, ep_genre)
+                        # 6. CATEGORY* - MODIFICATION: Passer detected_language
+                        self._write_categories(fh, episode_data, ep_genre, detected_language)
 
                         # 7. KEYWORD* (not used)
 
@@ -625,16 +625,31 @@ class XmltvGenerator:
             return any(flag in ['New', 'Live'] for flag in flags)
         return False
 
-    def _write_categories(self, fh, episode_data: Dict, ep_genre: str):
-        """Write program categories/genres"""
+    def _write_categories(self, fh, episode_data: Dict, ep_genre: str, detected_language: str = 'en'):
+        """Write program categories/genres with translation support and proper capitalization"""
         if ep_genre == '0':  # No genres
             return
 
         genres = self._get_genre_list(episode_data, ep_genre)
         if genres:
             for genre in genres:
-                clean_genre = HtmlUtils.conv_html(genre).replace('filter-', '')
-                fh.write(f'\t\t<category lang="en">{clean_genre}</category>\n')
+                # Clean before translating (no HTML encoding yet)
+                clean_genre = genre.replace('filter-', '')
+
+                # Translate before HTML encoding
+                if self.language_detector:
+                    translated_genre = self.language_detector.translate_category(clean_genre, detected_language)
+                else:
+                    # Fallback to English with proper capitalization
+                    if detected_language == 'en':
+                        translated_genre = clean_genre.title()
+                    else:
+                        translated_genre = clean_genre.capitalize()
+
+                # HTML encoding on translated text
+                html_safe_genre = HtmlUtils.conv_html(translated_genre)
+
+                fh.write(f'\t\t<category lang="{detected_language}">{html_safe_genre}</category>\n')
 
     def _get_genre_list(self, episode_data: Dict, ep_genre: str) -> List[str]:
         """Get processed genre list based on configuration"""

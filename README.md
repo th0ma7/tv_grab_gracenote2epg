@@ -11,6 +11,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
 - **🌍 Enhanced XMLTV Metadata**: Language, country, video/audio elements with DTD compliance
+- **🌐 Multilingual Category Translation**: Automatic English/French/Spanish category translations with proper localization
 - **🧠 Smart Cache Management**: Preserves existing data and only downloads what's needed
 - **⚡ Optimized Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
@@ -40,10 +41,21 @@ For automatic language detection, install langdetect:
 pip install langdetect>=1.0.9
 ```
 
+For multilingual category translations, install polib:
+
+```bash
+pip install polib>=1.1.0
+```
+
 **Language Detection:**
 - **Required for multi-language support**: langdetect is required for automatic French/English/Spanish detection
 - **Without langdetect**: All content will be marked as English (no language detection errors)
 - **Configurable**: Can be enabled/disabled via configuration or command line
+
+**Category Translation:**
+- **Required for multilingual categories**: polib is required for .po file translation support
+- **Without polib**: Categories will remain in original English
+- **Smart fallback**: Applies proper capitalization rules even without translations
 
 The application will log the language detection status:
 ```
@@ -54,6 +66,13 @@ Language detection: langdetect requested but not available
 Language detection: Disabled - defaulting to English for all content
 # OR  
 Language detection: Disabled by configuration - defaulting to English
+```
+
+Translation system status:
+```
+Translation system initialized: 2 languages, 252 total translations
+# OR
+polib not available - translations disabled
 ```
 
 ## Quick Start
@@ -92,6 +111,12 @@ The script auto-creates a default configuration file on first run:
 - **Raspberry Pi**: `~/script.module.zap2epg/epggrab/conf/gracenote2epg.xml` (if exists)
 - **Synology DSM7**: `/var/packages/tvheadend/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
 - **Synology DSM6**: `/var/packages/tvheadend/target/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
+
+Translation files are automatically managed in:
+- **Locales Directory**: `~/gracenote2epg/gracenote2epg/locales/`
+  - `fr/LC_MESSAGES/gracenote2epg.po` (French translations)
+  - `es/LC_MESSAGES/gracenote2epg.po` (Spanish translations)
+  - `gracenote2epg.pot` (Translation template)
 
 ## Logging Levels
 
@@ -150,7 +175,7 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --debug --console
 ## **Enhanced XMLTV Metadata**
 When `xdetails=true`, additional DTD-compliant elements are included:
 - **`<credits>`**: Name, role and image URL of actors
-- **`<category>`**: Each categories associated to current program (Action, Adventure, Agriculture, etc.)
+- **`<category>`**: Translated categories per detected language
 - **`<language>`**: Full language names (Français, English, Español)
 - **`<country>`**: US/CA based on zipcode format
 - **`<video>`**: Aspect ratio (4:3 for pre-1960 content, 16:9 modern) + color info
@@ -173,13 +198,6 @@ gracenote2epg features automatic language detection and translation with intelli
 - **XMLTV Compliance**: Proper `lang` attributes for all text elements
 - **Fallback Behavior**: When disabled, all content is marked as English (no detection errors)
 
-### **Smart Translations**
-- **Localized Terms**: Automatically translates rating and status terms
-- **Examples**:
-  - English: "Rated: PG | NEW | CC"
-  - French: "Classé: G | NOUVEAU | CC" 
-  - Spanish: "Clasificado: PG | NUEVO | CC"
-
 ### **Language Statistics**
 Runtime statistics show distribution of detected languages when enabled:
 ```
@@ -198,6 +216,35 @@ When disabled:
 Language detection: Disabled by configuration - defaulting to English
 Language detection disabled - all content marked as English
 ```
+
+## Multilingual Translation
+
+gracenote2epg features automatic category translation with intelligent language detection for French and Spanish.
+
+### **Translation Features**
+- **Proper Capitalization**: Per language capitalization
+- **Fallback Support**: Categories remain readable even if translation files are unavailable
+
+### **Translation Examples**
+```xml
+<!-- English program -->
+<category lang="en">Comedy Drama</category>
+<category lang="en">Books &amp; Literature</category>
+
+<!-- French program -->
+<category lang="fr">Comédie dramatique</category>
+<category lang="fr">Livres et littérature</category>
+
+<!-- Spanish program -->
+<category lang="es">Comedia dramática</category>
+<category lang="es">Libros y literatura</category>
+```
+
+### **Status Term Translation**
+Status terms in enhanced descriptions are also translated:
+- **English**: "Rated: PG | NEW | CC"
+- **French**: "CLASSÉ: G | NOUVEAU | CC"
+- **Spanish**: "CLASIFICADO: PG | NUEVO | CC"
 
 ## Configuration Options
 
@@ -448,20 +495,7 @@ Your EPG should now show:
 - **Channel listings** with proper names and numbers
 - **Program information** with descriptions, times, and metadata  
 - **Extended details** (if enabled): cast, ratings, episode info
-- **Multi-language support** with proper translations
-
-### 🚨 **Troubleshooting Migration Issues**
-
-**Problem**: Channels detected but no programs after re-run
-- **Solution**: Repeat Step 3 (database cleanup) and try again
-
-**Problem**: No channels detected at all  
-- **Solution**: Check `gracenote2epg.xml` configuration
-- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`, `usern`, `passw`, `tvhmatch`, `chmatch`)
-
-**Problem**: Extended details not showing
-- **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
-- **Note**: First run downloads 1000+ series details (normal delay)
+- **Multi-language support** with proper translations and categories
 
 ### 🔄 **Switching Back to Previous Grabber**
 
@@ -479,7 +513,15 @@ tv_grab_gracenote2epg/
 ├── gracenote2epg/                             # Main package
 │   ├── __init__.py
 │   ├── gracenote2epg_*.py                     # Individual modules
-│   └── __main__.py                            # Module entry point
+│   ├── __main__.py                            # Module entry point
+│   └── locales/                               # Translation files
+│       ├── gracenote2epg.pot                  # Translation template
+│       ├── fr/
+│       │   └── LC_MESSAGES/
+│       │       └── gracenote2epg.po           # French translations
+│       └── es/
+│           └── LC_MESSAGES/
+│               └── gracenote2epg.po           # Spanish translations
 ├── gracenote2epg.py                           # Main script
 ├── gracenote2epg.xml                          # Config template
 ├── setup.py                                   # Installation setup
@@ -488,7 +530,18 @@ tv_grab_gracenote2epg/
 └── tv_grab_gracenote2epg -> gracenote2epg.py  # Symlink
 ```
 
-## Troubleshooting
+## 🚨 **Troubleshooting**
+
+**Problem**: Channels detected but no programs after re-run
+- **Solution**: Repeat Step 3 (database cleanup) and try again
+
+**Problem**: No channels detected at all
+- **Solution**: Check `gracenote2epg.xml` configuration
+- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`, `usern`, `passw`, `tvhmatch`, `chmatch`)
+
+**Problem**: Extended details not showing
+- **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
+- **Note**: First run downloads 1000+ series details (normal delay)
 
 ### XMLTV Validation
 
@@ -505,6 +558,24 @@ xmllint --noout --dtdvalid xmltv.dtd xmltv.xml
 
 **Expected DTD Validation Result:** The XMLTV output is expected to be DTD-compliant.
 
+### Translation Issues
+
+Common translation problems and solutions:
+
+```bash
+- **Check if polib is installed**
+python -c "import polib; print('polib available')"
+
+# Verify translation files exist
+ls -la ~/gracenote2epg/gracenote2epg/locales/*/LC_MESSAGES/
+
+# Verify category translations are working
+grep '<category lang="fr">' cache/xmltv.xml | head -5
+grep '<category lang="en">' cache/xmltv.xml | head -5
+
+# Check translation system status in logs
+grep "Translation system initialized" log/gracenote2epg.log
+```
 
 ### Debug Mode
 
@@ -517,6 +588,7 @@ tv_grab_gracenote2epg --debug --console --days 1 --zip 92101
 Debug output includes:
 - Configuration processing details
 - Language detection method and statistics
+- Translation system status and loading
 - Cache efficiency metrics
 - Download statistics and timing
 - TVheadend integration status
@@ -538,18 +610,22 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 
 ## Version History
 
-### 1.3 - Next Release
+### 1.4 - Next Release
 **TODO**:
+- **IMDB**: Add IMDB support
+- **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
-- **Categories Translation**: Use en|fr|es categories when applicable
-- **Extended Description**: Revalidate `true` vs `false` output conditions
 
-**Fixed issues**:
-- **Credits**: Use proper `<image>` sub-element instead of src attribute - now scrict XMLTV DTD compliant
+### 1.3 - Undergoing Release (dev)
+- **Categories Translation**: Automatic English/French/Spanish category translation using .po files
+  - Proper capitalization rules per language (Title Case for English, Sentence case for French/Spanish)
+  - Smart fallback when translation files unavailable
+  - Requires `polib` for full functionality (`pip install polib`)
+- **Credits**: Use proper `<image>` sub-element instead of src attribute - now strict XMLTV DTD compliant
 - **`episode-num xmltv_ns`**: Use spaces around dots per DTD standard
 - **Stereo detection**: Fixed to properly detect STEREO tag
 - **Rating system**: Enhanced with MPAA system support
-- **Language Cache**: Allow handing of malformed XML when scrubbing previous xmltv
+- **Language Cache**: Allow handling of malformed XML when scrubbing previous xmltv
 
 ### 1.2 - Current Release
 - **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections

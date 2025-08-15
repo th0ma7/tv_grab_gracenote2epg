@@ -1,0 +1,526 @@
+# French translations for gracenote2epg
+# Copyright (C) 2025 gracenote2epg
+# This file is distributed under the same license as the gracenote2epg package.
+# Vincent Fortier <th0ma7@gmail.com>, 2025.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: gracenote2epg 1.3\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-08-15 08:20+0500\n"
+"PO-Revision-Date: 2025-08-15 08:20+0500\n"
+"Last-Translator: Vincent Fortier <th0ma7@gmail.com>\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+# TV program categories
+#. TV program category: 3x3 basketball
+msgid "3x3 basketball"
+msgstr "basketball 3x3"
+
+#. TV program category: action
+msgid "action"
+msgstr "action"
+
+#. TV program category: action sports
+msgid "action sports"
+msgstr "sports d'action"
+
+#. TV program category: adventure
+msgid "adventure"
+msgstr "aventure"
+
+#. TV program category: agriculture
+msgid "agriculture"
+msgstr "agriculture"
+
+#. TV program category: american history
+msgid "american history"
+msgstr "histoire américaine"
+
+#. TV program category: ancient history
+msgid "ancient history"
+msgstr "histoire ancienne"
+
+#. TV program category: animals
+msgid "animals"
+msgstr "animaux"
+
+#. TV program category: animated
+msgid "animated"
+msgstr "animation"
+
+#. TV program category: anime
+msgid "anime"
+msgstr "anime"
+
+#. TV program category: anthology
+msgid "anthology"
+msgstr "anthologie"
+
+#. TV program category: archery
+msgid "archery"
+msgstr "tir à l'arc"
+
+#. TV program category: art
+msgid "art"
+msgstr "art"
+
+#. TV program category: arts/crafts
+msgid "arts/crafts"
+msgstr "arts et artisanat"
+
+#. TV program category: auction
+msgid "auction"
+msgstr "enchères"
+
+#. TV program category: auto
+msgid "auto"
+msgstr "automobile"
+
+#. TV program category: auto racing
+msgid "auto racing"
+msgstr "course automobile"
+
+#. TV program category: baseball
+msgid "baseball"
+msgstr "baseball"
+
+#. TV program category: basketball
+msgid "basketball"
+msgstr "basketball"
+
+#. TV program category: beach volleyball
+msgid "beach volleyball"
+msgstr "volleyball de plage"
+
+#. TV program category: bicycle
+msgid "bicycle"
+msgstr "cyclisme"
+
+#. TV program category: biography
+msgid "biography"
+msgstr "biographie"
+
+#. TV program category: books & literature
+msgid "books & literature"
+msgstr "livres et littérature"
+
+#. TV program category: bull riding
+msgid "bull riding"
+msgstr "monte de taureaux"
+
+#. TV program category: bus./financial
+msgid "bus./financial"
+msgstr "affaires/finance"
+
+#. TV program category: children
+msgid "children"
+msgstr "enfants"
+
+#. TV program category: collectibles
+msgid "collectibles"
+msgstr "objets de collection"
+
+#. TV program category: comedy
+msgid "comedy"
+msgstr "comédie"
+
+#. TV program category: comedy drama
+msgid "comedy drama"
+msgstr "comédie dramatique"
+
+#. TV program category: community
+msgid "community"
+msgstr "communauté"
+
+#. TV program category: competition reality
+msgid "competition reality"
+msgstr "télé-réalité de compétition"
+
+#. TV program category: computers
+msgid "computers"
+msgstr "informatique"
+
+#. TV program category: consumer
+msgid "consumer"
+msgstr "consommateur"
+
+#. TV program category: cooking
+msgid "cooking"
+msgstr "cuisine"
+
+#. TV program category: crime
+msgid "crime"
+msgstr "crime"
+
+#. TV program category: crime drama
+msgid "crime drama"
+msgstr "drame criminel"
+
+#. TV program category: dance
+msgid "dance"
+msgstr "danse"
+
+#. TV program category: dark comedy
+msgid "dark comedy"
+msgstr "comédie noire"
+
+#. TV program category: docudrama
+msgid "docudrama"
+msgstr "docudrame"
+
+#. TV program category: documentary
+msgid "documentary"
+msgstr "documentaire"
+
+#. TV program category: drag racing
+msgid "drag racing"
+msgstr "course de dragsters"
+
+#. TV program category: drama
+msgid "drama"
+msgstr "drame"
+
+#. TV program category: educational
+msgid "educational"
+msgstr "éducatif"
+
+#. TV program category: entertainment
+msgid "entertainment"
+msgstr "divertissement"
+
+#. TV program category: environment
+msgid "environment"
+msgstr "environnement"
+
+#. TV program category: event
+msgid "event"
+msgstr "événement"
+
+#. TV program category: exercise
+msgid "exercise"
+msgstr "exercice"
+
+#. TV program category: family
+msgid "family"
+msgstr "famille"
+
+#. TV program category: fantasy
+msgid "fantasy"
+msgstr "fantastique"
+
+#. TV program category: fashion
+msgid "fashion"
+msgstr "mode"
+
+#. TV program category: fishing
+msgid "fishing"
+msgstr "pêche"
+
+#. TV program category: football
+msgid "football"
+msgstr "football américain"
+
+#. TV program category: game show
+msgid "game show"
+msgstr "jeu télévisé"
+
+#. TV program category: gaming
+msgid "gaming"
+msgstr "jeux vidéo"
+
+#. TV program category: gay/lesbian
+msgid "gay/lesbian"
+msgstr "gay/lesbienne"
+
+#. TV program category: golf
+msgid "golf"
+msgstr "golf"
+
+#. TV program category: health
+msgid "health"
+msgstr "santé"
+
+#. TV program category: historical drama
+msgid "historical drama"
+msgstr "drame historique"
+
+#. TV program category: history
+msgid "history"
+msgstr "histoire"
+
+#. TV program category: holiday
+msgid "holiday"
+msgstr "vacances"
+
+#. TV program category: home improvement
+msgid "home improvement"
+msgstr "rénovation domiciliaire"
+
+#. TV program category: horror
+msgid "horror"
+msgstr "horreur"
+
+#. TV program category: horse racing
+msgid "horse racing"
+msgstr "course de chevaux"
+
+#. TV program category: house/garden
+msgid "house/garden"
+msgstr "maison et jardin"
+
+#. TV program category: how-to
+msgid "how-to"
+msgstr "comment faire"
+
+#. TV program category: hunting
+msgid "hunting"
+msgstr "chasse"
+
+#. TV program category: interview
+msgid "interview"
+msgstr "entrevue"
+
+#. TV program category: kayaking
+msgid "kayaking"
+msgstr "kayak"
+
+#. TV program category: law
+msgid "law"
+msgstr "droit"
+
+#. TV program category: lgbtq
+msgid "lgbtq"
+msgstr "lgbtq"
+
+#. TV program category: martial arts
+msgid "martial arts"
+msgstr "arts martiaux"
+
+#. TV program category: medical
+msgid "medical"
+msgstr "médical"
+
+#. TV program category: military
+msgid "military"
+msgstr "militaire"
+
+#. TV program category: miniseries
+msgid "miniseries"
+msgstr "mini-série"
+
+#. TV program category: motorsports
+msgid "motorsports"
+msgstr "sports motorisés"
+
+#. TV program category: movie
+msgid "movie"
+msgstr "film"
+
+#. TV program category: multi-sport event
+msgid "multi-sport event"
+msgstr "événement multisport"
+
+#. TV program category: musical
+msgid "musical"
+msgstr "musical"
+
+#. TV program category: musical comedy
+msgid "musical comedy"
+msgstr "comédie musicale"
+
+#. TV program category: music
+msgid "music"
+msgstr "musique"
+
+#. TV program category: mystery
+msgid "mystery"
+msgstr "mystère"
+
+#. TV program category: nature
+msgid "nature"
+msgstr "nature"
+
+#. TV program category: news
+msgid "news"
+msgstr "nouvelles"
+
+#. TV program category: newsmagazine
+msgid "newsmagazine"
+msgstr "magazine d'actualités"
+
+#. TV program category: outdoors
+msgid "outdoors"
+msgstr "plein air"
+
+#. TV program category: paranormal
+msgid "paranormal"
+msgstr "paranormal"
+
+#. TV program category: political satire
+msgid "political satire"
+msgstr "satire politique"
+
+#. TV program category: politics
+msgid "politics"
+msgstr "politique"
+
+#. TV program category: pro wrestling
+msgid "pro wrestling"
+msgstr "lutte professionnelle"
+
+#. TV program category: public affairs
+msgid "public affairs"
+msgstr "affaires publiques"
+
+#. TV program category: reality
+msgid "reality"
+msgstr "télé-réalité"
+
+#. TV program category: religious
+msgid "religious"
+msgstr "religieux"
+
+#. TV program category: romance
+msgid "romance"
+msgstr "romance"
+
+#. TV program category: romantic comedy
+msgid "romantic comedy"
+msgstr "comédie romantique"
+
+#. TV program category: science
+msgid "science"
+msgstr "science"
+
+#. TV program category: science fiction
+msgid "science fiction"
+msgstr "science-fiction"
+
+#. TV program category: self improvement
+msgid "self improvement"
+msgstr "développement personnel"
+
+#. TV program category: shopping
+msgid "shopping"
+msgstr "magasinage"
+
+#. TV program category: sitcom
+msgid "sitcom"
+msgstr "comédie de situation"
+
+#. TV program category: soap
+msgid "soap"
+msgstr "téléroman"
+
+#. TV program category: soccer
+msgid "soccer"
+msgstr "football"
+
+#. TV program category: special
+msgid "special"
+msgstr "spécial"
+
+#. TV program category: sports
+msgid "sports"
+msgstr "sports"
+
+#. TV program category: sports talk
+msgid "sports talk"
+msgstr "débat sportif"
+
+#. TV program category: standup
+msgid "standup"
+msgstr "humour"
+
+#. TV program category: sumo wrestling
+msgid "sumo wrestling"
+msgstr "lutte sumo"
+
+#. TV program category: talk
+msgid "talk"
+msgstr "causerie"
+
+#. TV program category: technology
+msgid "technology"
+msgstr "technologie"
+
+#. TV program category: thriller
+msgid "thriller"
+msgstr "suspense"
+
+#. TV program category: track/field
+msgid "track/field"
+msgstr "athlétisme"
+
+#. TV program category: travel
+msgid "travel"
+msgstr "voyage"
+
+#. TV program category: variety
+msgid "variety"
+msgstr "Variétés"
+
+#. TV program category: volleyball
+msgid "volleyball"
+msgstr "Volleyball"
+
+#. TV program category: war
+msgid "war"
+msgstr "guerre"
+
+#. TV program category: weather
+msgid "weather"
+msgstr "météo"
+
+#. TV program category: western
+msgid "western"
+msgstr "western"
+
+#. TV program category: world history
+msgid "world history"
+msgstr "histoire mondiale"
+
+# Status terms
+#. Status term: rated
+msgid "rated"
+msgstr "classé"
+
+#. Status term: new
+msgid "new"
+msgstr "nouveau"
+
+#. Status term: premiere
+msgid "premiere"
+msgstr "première"
+
+#. Status term: finale
+msgid "finale"
+msgstr "finale"
+
+#. Status term: live
+msgid "live"
+msgstr "en direct"
+
+#. Status term: premiered
+msgid "premiered"
+msgstr "première diffusion"
+
+# Language names
+#. Language name: English
+msgid "English"
+msgstr "Anglais"
+
+#. Language name: French
+msgid "French"
+msgstr "Français"
+
+#. Language name: Spanish
+msgid "Spanish"
+msgstr "Espagnol"
