@@ -7,11 +7,11 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 ## Key Features
 
 - **✅ Strict XMLTV DTD Compliance**: Now following strict DTD compliance
-- **🚀 Intelligent Language Cache**: 95-100% cache efficiency with automatic language detection reuse
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
 - **🌍 Enhanced XMLTV Metadata**: Language, country, video/audio elements with DTD compliance
-- **🌐 Multilingual Category Translation**: Automatic English/French/Spanish category translations with proper localization
+- **🚀 Language Detection & Caching**: Automated language detection with high cache efficiency
+- **🌐 Multilingual Translation**: Automated English/French/Spanish generic details translation
 - **🧠 Smart Cache Management**: Preserves existing data and only downloads what's needed
 - **⚡ Optimized Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
@@ -403,7 +403,7 @@ TVheadend's EPG database can have conflicts when switching between different gra
 [INFO]:xmltv: broadcasts tot=    0 new=    0 mod=    0  ← No programs!
 ```
 
-### 🛠️ **Complete Migration Procedure**
+### 🛠️ **EPG Migration Procedure**
 
 Follow these steps for a successful migration:
 
