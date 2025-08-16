@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+include gracenote2epg.xml
+include gracenote2epg.py
+recursive-include gracenote2epg/locales *.po *.pot
