@@ -1,4 +1,21 @@
+# Include wrapper script in source distribution (only tv_grab_gracenote2epg to avoid conflict with gracenote2epg/ directory)
+include tv_grab_gracenote2epg
+
+# Include documentation and configuration
 include README.md
 include LICENSE
+include PACKAGING.md
 include gracenote2epg.xml
-recursive-include gracenote2epg/locales *.po *.pot
+
+# Include package data that might not be auto-detected
+recursive-include gracenote2epg/locales *.po *.pot *.mo
+
+# Exclude development and build artifacts
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .pytest_cache
+global-exclude *.egg-info
+prune build
+prune dist

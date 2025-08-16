@@ -9,73 +9,122 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **✅ Strict XMLTV DTD Compliance**: Now following strict DTD compliance
 - **🧩 Modular Architecture**: Clean separation of concerns for easy maintenance and testing
 - **🎬 Kodi/TVheadend Ready**: Originally designed for seamless Kodi and TVheadend integration
-- **🌍 Enhanced XMLTV Metadata**: Language, country, video/audio elements with DTD compliance
+- **🌟 Enhanced XMLTV Metadata**: Language, country, video/audio elements with DTD compliance
 - **🚀 Language Detection & Caching**: Automated language detection with high cache efficiency
-- **🌐 Multilingual Translation**: Automated English/French/Spanish generic details translation
+- **🌍 Multilingual Translation**: Automated English/French/Spanish generic details translation
 - **🧠 Smart Cache Management**: Preserves existing data and only downloads what's needed
 - **⚡ Optimized Guide Refresh**: Refreshes first 48 hours while reusing cached data for later periods
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
 - **🎯 Extended Program Details**: Optional enhanced descriptions
-- **🛡️  Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
+- **🛡️ Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
 
 **IMPORTANT:** Raspberry Pi setup was not tested - requiring testers to confirm functionality or make any necessary changes.
 
 ## Installation
 
-### Dependencies
-
-#### Required Dependencies
-
-Only one external dependency is required:
+### From PyPI (Recommended)
 
 ```bash
-pip install requests>=2.25.0
+# Install basic package
+pip install gracenote2epg
+
+# Install with full features (language detection + translations)
+pip install gracenote2epg[full]
 ```
 
-#### Optional Dependencies (Recommended)
-
-For automatic language detection, install langdetect:
+### From Wheel Package
 
 ```bash
-pip install langdetect>=1.0.9
+# Download and install wheel
+pip install gracenote2epg-1.4-py3-none-any.whl[full]
 ```
 
-For multilingual category translations, install polib:
+### From Source Distribution
 
 ```bash
-pip install polib>=1.1.0
+# Extract and use directly (no installation required)
+tar -xzf gracenote2epg-1.4.tar.gz
+cd gracenote2epg-1.4
+./tv_grab_gracenote2epg --capabilities
+
+# Or install from source
+pip install .
 ```
 
-**Language Detection:**
-- **Required for multi-language support**: langdetect is required for automatic French/English/Spanish detection
-- **Without langdetect**: All content will be marked as English (no language detection errors)
-- **Configurable**: Can be enabled/disabled via configuration or command line
+### Development Installation
 
-**Category Translation:**
-- **Required for multilingual categories**: polib is required for .po file translation support
-- **Without polib**: Categories will remain in original English
-- **Smart fallback**: Applies proper capitalization rules even without translations
-
-The application will log the language detection status:
-```
-Language detection: Using langdetect library (enhanced accuracy)
-# OR
-Language detection: langdetect requested but not available
-  Please install langdetect: pip install langdetect
-Language detection: Disabled - defaulting to English for all content
-# OR  
-Language detection: Disabled by configuration - defaulting to English
+```bash
+git clone https://github.com/th0ma7/gracenote2epg.git
+cd gracenote2epg
+pip install -e .[full]  # Editable install with full features
 ```
 
-Translation system status:
+## ⚠️ **Important Installation Notes**
+
+### Package Distribution Types
+
+gracenote2epg is available in two distribution formats:
+
+1. **Wheel Package (.whl)** - For standard `pip install`
+   - Creates both `gracenote2epg` and `tv_grab_gracenote2epg` commands
+   - Installs in Python site-packages
+   - Recommended for most users
+
+2. **Source Distribution (.tar.gz)** - For manual installation
+   - Includes `tv_grab_gracenote2epg` wrapper script
+   - Works immediately after extraction (no installation required)
+   - Useful for systems where pip install isn't preferred
+
+### Command Availability
+
+**After `pip install gracenote2epg`**:
+```bash
+gracenote2epg --version              # Primary command
+tv_grab_gracenote2epg --capabilities # XMLTV standard name
+python -m gracenote2epg --version    # Module execution
 ```
-Translation system initialized: 2 languages, 252 total translations
-# OR
-polib not available - translations disabled
+
+**From source distribution** (extract .tar.gz):
+```bash
+./tv_grab_gracenote2epg --capabilities # Wrapper script only
+python3 -m gracenote2epg --version     # Module execution
+```
+
+### Feature Dependencies
+
+- **Basic functionality**: Only requires `requests` (automatically installed)
+- **Language detection**: Requires `langdetect` → Install with `[full]` extra
+- **Category translations**: Requires `polib` → Install with `[full]` extra
+
+```bash
+# Get all features
+pip install gracenote2epg[full]
 ```
 
 ## Quick Start
+
+### Available Commands
+
+After installation, gracenote2epg provides multiple command options:
+
+```bash
+# XMLTV standard command (recommended for compatibility)
+tv_grab_gracenote2epg --capabilities
+tv_grab_gracenote2epg --days 7 --zip 92101
+
+# Alternative command name
+gracenote2epg --days 7 --zip 92101
+
+# Python module execution (always available)
+python -m gracenote2epg --days 7 --zip 92101
+```
+
+**From source distribution** (without installation):
+```bash
+# Only tv_grab_gracenote2epg wrapper available
+./tv_grab_gracenote2epg --capabilities
+```
 
 ### Basic Usage
 
@@ -91,17 +140,20 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --console
 
 # Use Canadian postal code
 tv_grab_gracenote2epg --days 3 --postal J3B1M4 --warning --console
+
+# Save to custom file
+tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml
 ```
 
-### Module Usage
+### Dependencies Information
 
-```bash
-# Run as Python module
-python -m gracenote2epg --days 7 --zip 92101
+**Required**: `requests>=2.25.0`
 
-# Direct script execution
-./gracenote2epg.py --help
-```
+**Optional (recommended)**:
+- `langdetect>=1.0.9` - For automatic French/English/Spanish detection
+- `polib>=1.1.0` - For multilingual category translations
+
+Install with `pip install gracenote2epg[full]` to get all optional dependencies.
 
 ### Configuration
 
@@ -149,28 +201,6 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml --console
 ```
 
 **Note**: When using `--output filename`, the XML is written to the specified file instead of stdout, and the default cache/xmltv.xml is replaced by your custom filename.
-
-### Complete Examples with Logging Levels:
-
-```bash
-# Default logging: INFO+WARNING+ERROR to file, XML to stdout
-tv_grab_gracenote2epg --days 7 --zip 92101
-
-# Console output: same logs to stderr + file, XML to stdout  
-tv_grab_gracenote2epg --days 7 --zip 92101 --console
-
-# Warnings only: WARNING+ERROR to file, XML to stdout
-tv_grab_gracenote2epg --days 7 --zip 92101 --warning
-
-# Warnings with console: WARNING+ERROR to stderr + file
-tv_grab_gracenote2epg --days 7 --zip 92101 --warning --console
-
-# Debug mode: ALL logs to file, XML to stdout
-tv_grab_gracenote2epg --days 7 --zip 92101 --debug
-
-# Debug with console: ALL logs to stderr + file (very verbose)
-tv_grab_gracenote2epg --days 7 --zip 92101 --debug --console
-```
 
 ## **Enhanced XMLTV Metadata**
 When `xdetails=true`, additional DTD-compliant elements are included:
@@ -504,36 +534,26 @@ If you need to switch back to your previous grabber:
 2. **Always clean EPG database** when switching grabbers
 3. **Never run multiple XMLTV grabbers** simultaneously
 
-## Development
+## 🔧 **Troubleshooting**
 
-### Project Structure for Development
+### Installation Issues
 
-```bash
-tv_grab_gracenote2epg/
-├── gracenote2epg/                             # Main package
-│   ├── __init__.py
-│   ├── gracenote2epg_*.py                     # Individual modules
-│   ├── __main__.py                            # Module entry point
-│   └── locales/                               # Translation files
-│       ├── gracenote2epg.pot                  # Translation template
-│       ├── fr/
-│       │   └── LC_MESSAGES/
-│       │       └── gracenote2epg.po           # French translations
-│       └── es/
-│           └── LC_MESSAGES/
-│               └── gracenote2epg.po           # Spanish translations
-├── gracenote2epg.py                           # Main script
-├── gracenote2epg.xml                          # Config template
-├── setup.py                                   # Installation setup
-├── README.md                                  # This file
-├── LICENSE                                    # GPL v3 license
-└── tv_grab_gracenote2epg -> gracenote2epg.py  # Symlink
-```
+**Problem**: `Command 'gracenote2epg' not found`
+- **Solution**: Install with pip: `pip install gracenote2epg`
+- **Alternative**: Use module execution: `python -m gracenote2epg`
 
-## 🚨 **Troubleshooting**
+**Problem**: Language detection not working  
+- **Solution**: Install full features: `pip install gracenote2epg[full]`
+- **Check**: `python -c "import langdetect; print('OK')"`
+
+**Problem**: Categories not translating
+- **Solution**: Install full features: `pip install gracenote2epg[full]`
+- **Check**: `python -c "import polib; print('OK')"`
+
+### TVheadend Issues
 
 **Problem**: Channels detected but no programs after re-run
-- **Solution**: Repeat Step 3 (database cleanup) and try again
+- **Solution**: Clear EPG database and cache (see Migration section above)
 
 **Problem**: No channels detected at all
 - **Solution**: Check `gracenote2epg.xml` configuration
@@ -542,6 +562,16 @@ tv_grab_gracenote2epg/
 **Problem**: Extended details not showing
 - **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
 - **Note**: First run downloads 1000+ series details (normal delay)
+
+### Performance Issues
+
+**Problem**: Slow language detection
+- **Solution**: Language cache improves performance after first run (95%+ cache efficiency typical)
+
+**Problem**: Extended details downloading too many files
+- **Solution**: Cache efficiency improves significantly after first run (96%+ typical)
+
+For detailed troubleshooting and EPG migration procedures, see the Migration section above.
 
 ### XMLTV Validation
 
@@ -563,7 +593,7 @@ xmllint --noout --dtdvalid xmltv.dtd xmltv.xml
 Common translation problems and solutions:
 
 ```bash
-- **Check if polib is installed**
+# Check if polib is installed
 python -c "import polib; print('polib available')"
 
 # Verify translation files exist
@@ -594,6 +624,41 @@ Debug output includes:
 - TVheadend integration status
 - Extended details processing
 
+## Development
+
+### For Developers and Contributors
+
+See **[PACKAGING.md](PACKAGING.md)** for the complete development guide covering:
+- Building wheel and source distributions
+- Comprehensive testing procedures
+- Development environment setup
+- Version management
+- Creating releases
+
+### Project Structure for Development
+
+```bash
+tv_grab_gracenote2epg/
+├── gracenote2epg/                             # Main package
+│   ├── __init__.py
+│   ├── gracenote2epg_*.py                     # Individual modules
+│   ├── __main__.py                            # Module entry point
+│   └── locales/                               # Translation files
+│       ├── gracenote2epg.pot                  # Translation template
+│       ├── fr/
+│       │   └── LC_MESSAGES/
+│       │       └── gracenote2epg.po           # French translations
+│       └── es/
+│           └── LC_MESSAGES/
+│               └── gracenote2epg.po           # Spanish translations
+├── tv_grab_gracenote2epg                      # Source distribution wrapper
+├── setup.py                                   # Installation setup
+├── PACKAGING.md                               # Development guide
+├── README.md                                  # This file
+├── LICENSE                                    # GPL v3 license
+└── gracenote2epg.xml                          # Config template
+```
+
 ## License
 
 GPL v3 - Same as original script.module.zap2epg project
@@ -617,10 +682,10 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 - **Country**: Use actual country of origin, if unavailable discard
 
 ### 1.4 - Current Release (dev)
-**TODO**:
-- Redo `tv_grab_gracenote2epg` wrapper
-**DONE**:
 - **Python wheel compatible**: Now allows generating a python wheel redistributable package
+- **Comprehensive packaging**: Both wheel (.whl) and source (.tar.gz) distributions
+- **Multiple command interfaces**: gracenote2epg, tv_grab_gracenote2epg, and module execution
+- **Enhanced documentation**: Separated user and developer documentation
 
 ### 1.3 - Previous Release
 - **Categories Translation**: Automatic English/French/Spanish category translation using .po files

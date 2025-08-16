@@ -72,17 +72,19 @@ setup(
     },
     include_package_data=True,
 
-    # Console entry points with non-conflicting names
+    # Console entry points - both names for compatibility
     entry_points={
         'console_scripts': [
             'gracenote2epg=gracenote2epg.__main__:main',
+            'tv_grab_gracenote2epg=gracenote2epg.__main__:main',
         ],
     },
 
-    # Additional files - documentation and config only
+    # Additional files - documentation, config, and wrapper scripts
     data_files=[
-        ('share/doc/gracenote2epg', ['README.md', 'LICENSE']),
+        ('share/doc/gracenote2epg', ['README.md', 'LICENSE', 'PACKAGING.md']),
         ('share/gracenote2epg', ['gracenote2epg.xml']),
+        ('bin', ['tv_grab_gracenote2epg']),  # Only the XMLTV standard wrapper
     ],
 
     # Classifiers for PyPI
