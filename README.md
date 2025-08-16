@@ -616,7 +616,10 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
-### 1.4 - Current Release
+### 1.4 - Current Release (dev)
+**TODO**:
+- Redo `tv_grab_gracenote2epg` wrapper
+**DONE**:
 - **Python wheel compatible**: Now allows generating a python wheel redistributable package
 
 ### 1.3 - Previous Release
