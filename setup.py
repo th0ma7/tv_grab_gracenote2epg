@@ -12,12 +12,25 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 
 # Read version from package
 def get_version():
-    """Extract version from gracenote2epg/__init__.py"""
+    """Extract version from gracenote2epg/__init__.py - fail if not found"""
     init_file = this_directory / "gracenote2epg" / "__init__.py"
-    for line in init_file.read_text().splitlines():
+
+    if not init_file.exists():
+        raise FileNotFoundError(f"Cannot find {init_file}")
+
+    content = init_file.read_text()
+    for line in content.splitlines():
         if line.startswith('__version__'):
-            return line.split('"')[1]
-    return "1.3"
+            # Extract version from line like: __version__ = "1.4"
+            if '"' in line:
+                return line.split('"')[1]
+            elif "'" in line:
+                return line.split("'")[1]
+
+    # Pas de fallback - échec strict !
+    raise ValueError(
+        f"No __version__ found in {init_file}. "
+    )
 
 setup(
     name="gracenote2epg",

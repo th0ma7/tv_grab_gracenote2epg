@@ -11,20 +11,17 @@ import sys
 import time
 from pathlib import Path
 
-# Imports spécifiques pour éviter le conflit circulaire
-from gracenote2epg.gracenote2epg_args import ArgumentParser
-from gracenote2epg.gracenote2epg_config import ConfigManager
-from gracenote2epg.gracenote2epg_downloader import OptimizedDownloader
-from gracenote2epg.gracenote2epg_parser import GuideParser
-from gracenote2epg.gracenote2epg_tvheadend import TvheadendClient
-from gracenote2epg.gracenote2epg_utils import CacheManager, TimeUtils
-from gracenote2epg.gracenote2epg_xmltv import XmltvGenerator
+# Specifics imports
+from .gracenote2epg_args import ArgumentParser
+from .gracenote2epg_config import ConfigManager
+from .gracenote2epg_downloader import OptimizedDownloader
+from .gracenote2epg_parser import GuideParser
+from .gracenote2epg_tvheadend import TvheadendClient
+from .gracenote2epg_utils import CacheManager, TimeUtils
+from .gracenote2epg_xmltv import XmltvGenerator
 
-# Import de la version depuis le package
-try:
-    from gracenote2epg import __version__
-except ImportError:
-    __version__ = "1.3"
+# Package version
+from . import __version__
 
 
 def setup_logging(logging_config: dict, log_file: Path):

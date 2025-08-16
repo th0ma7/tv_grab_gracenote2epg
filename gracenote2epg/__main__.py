@@ -8,7 +8,7 @@ import sys
 def main():
     """Main entry point for console scripts"""
     try:
-        from .gracenote2epg import main as script_main
+        from .main import main as script_main
         return script_main()
     except ImportError as e:
         print(f"Error: Could not import main script: {e}", file=sys.stderr)

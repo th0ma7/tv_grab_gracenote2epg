@@ -610,13 +610,16 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 
 ## Version History
 
-### 1.4 - Next Release
+### 1.5 - Next Release
 **TODO**:
 - **IMDB**: Add IMDB support
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
-### 1.3 - Current Release
+### 1.4 - Current Release
+- **Python wheel compatible**: Now allows generating a python wheel redistributable package
+
+### 1.3 - Previous Release
 - **Categories Translation**: Automatic English/French/Spanish category translation using .po files
   - Proper capitalization rules per language (Title Case for English, Sentence case for French/Spanish)
   - Smart fallback when translation files unavailable
@@ -627,7 +630,7 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 - **Rating system**: Enhanced with MPAA system support
 - **Language Cache**: Allow handling of malformed XML when scrubbing previous xmltv
 
-### 1.2 - Previous Release
+### 1.2 - Older Release
 - **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections
 - **Enhanced XMLTV Metadata**: New DTD-compliant fields (language, country, video, audio) controlled by xdetails configuration
 - **Modular Language Detection**: New gracenote2epg_language module with LanguageDetector class for better architecture
