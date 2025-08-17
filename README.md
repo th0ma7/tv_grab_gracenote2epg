@@ -147,19 +147,6 @@ tv_grab_gracenote2epg --days 3 --postal J3B1M4 --warning --console
 tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml
 ```
 
-### Lineup Testing and Configuration
-
-```bash
-# Test lineup detection (simplified output)
-tv_grab_gracenote2epg --show-lineup --zip 92101
-
-# Test with detailed technical information
-tv_grab_gracenote2epg --show-lineup --zip 92101 --debug
-
-# Test Canadian postal code
-tv_grab_gracenote2epg --show-lineup --postal J3B1M4
-```
-
 ### Dependencies Information
 
 **Required**: `requests>=2.25.0`
@@ -309,9 +296,9 @@ See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubl
 <setting id="zipcode">92101</setting>  <!-- US ZIP or Canadian postal code -->
 ```
 
-### Simplified Lineup Configuration ⭐ NEW
+### Simple Lineup Configuration
 ```xml
-<setting id="lineupid">auto</setting>  <!-- Ultra-simple lineup configuration -->
+<setting id="lineupid">auto</setting>  <!-- Simple lineup configuration -->
 ```
 
 **Accepted values for `lineupid`:**
@@ -339,6 +326,42 @@ See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubl
 5. Copy the lineup ID from the URL (remove the `lu` prefix)
 
 📖 **For detailed lineup configuration guide, see [LINEUPID.md](LINEUPID.md)**
+
+### Lineup Testing and Configuration
+
+Before configuring your lineup, you can test the auto-detection with your postal/ZIP code:
+
+```bash
+# Test lineup detection (simplified output)
+tv_grab_gracenote2epg --show-lineup --zip 92101
+
+# Test with detailed technical information
+tv_grab_gracenote2epg --show-lineup --zip 92101 --debug
+
+# Test Canadian postal code
+tv_grab_gracenote2epg --show-lineup --postal J3B1M4
+```
+
+**Example output (simplified mode):**
+```
+🌐 GRACENOTE API URL PARAMETERS:
+   lineupId=CAN-OTAJ3B1M4-DEFAULT
+   country=CAN
+   postalCode=J3B1M4
+
+✅ VALIDATION URLs (manual verification):
+   Auto-generated: https://www.tvtv.ca/qc/saint-jean-sur-richelieu/j3b1m4/luCAN-OTAJ3B1M4
+   Manual lookup:
+     1. Go to https://www.tvtv.ca/
+     2. Enter postal code: J3B1M4
+     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows luCAN-OTAJ3B1M4
+     3b. For Cable/Sat: Select provider → URL shows luCAN-[ProviderID]-X
+
+🔗 GRACENOTE API URL FOR TESTING:
+   https://tvlistings.gracenote.com/api/grid?aid=orbebb&country=CAN&postalCode=J3B1M4&time=1755432000&timespan=3&isOverride=true&userId=-&lineupId=CAN-OTAJ3B1M4-DEFAULT&headendId=lineupId
+```
+
+**Debug mode** provides additional technical details including manual download commands, API parameter explanations, and configuration recommendations.
 
 ### Core Settings
 ```xml
@@ -451,14 +474,6 @@ Language detection statistics (using langdetect library with cache):
 tv_grab_gracenote2epg --description      # Show grabber description
 tv_grab_gracenote2epg --version          # Show version
 tv_grab_gracenote2epg --capabilities     # Show capabilities
-```
-
-### Lineup Testing
-
-```bash
-tv_grab_gracenote2epg --show-lineup --zip 92101        # Test lineup detection
-tv_grab_gracenote2epg --show-lineup --zip 92101 --debug # Detailed technical info
-tv_grab_gracenote2epg --show-lineup --postal J3B1M4    # Canadian postal code
 ```
 
 ### Logging Control
