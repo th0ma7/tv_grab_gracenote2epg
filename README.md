@@ -17,6 +17,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
 - **🎯 Extended Program Details**: Optional enhanced descriptions
 - **🛡️ Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
+- **📝 Built-in Log Rotation**: Intelligent multi-period log management
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
 
 **IMPORTANT:** Raspberry Pi setup was not tested - requiring testers to confirm functionality or make any necessary changes.
@@ -276,6 +277,17 @@ Status terms in enhanced descriptions are also translated:
 - **French**: "CLASSÉ: G | NOUVEAU | CC"
 - **Spanish**: "CLASIFICADO: PG | NUEVO | CC"
 
+## Log Management
+
+gracenote2epg includes built-in log rotation with intelligent multi-period support:
+
+- **Smart Content Analysis**: Separates complete periods (days/weeks/months) into individual backup files
+- **tail -f Compatible**: Uses copytruncate strategy to maintain log monitoring compatibility  
+- **Configurable**: Daily, weekly, or monthly rotation with adjustable retention
+- **Visible Actions**: Rotation activities are logged with clear reporting
+
+See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubleshooting.
+
 ## Configuration Options
 
 ### Required Settings
@@ -319,6 +331,13 @@ Status terms in enhanced descriptions are also translated:
 <setting id="passw"></setting>          <!-- TVH password (optional) -->
 ```
 
+### Log Rotation Settings
+```xml
+<setting id="logrotate_enabled">true</setting>     <!-- Enable log rotation -->
+<setting id="logrotate_interval">weekly</setting>  <!-- daily/weekly/monthly -->
+<setting id="logrotate_keep">14</setting>          <!-- Number of backups to keep -->
+```
+
 ## Performance & Caching
 
 ### Cache System
@@ -344,6 +363,11 @@ The modular design includes a sophisticated caching system with major performanc
 - **Smart Retention**: Keeps backups for guide duration
 - **Automatic Cleanup**: Removes old backups beyond retention
 
+#### Log Management
+- **Multi-Period Rotation**: Intelligent separation of complete periods into individual backup files
+- **Content Analysis**: Analyzes actual log content instead of file timestamps
+- **Period Detection**: Automatically identifies daily/weekly/monthly boundaries
+
 ### Performance Statistics Example
 
 ```
@@ -361,6 +385,13 @@ Guide download completed:
   Blocks: 56 total (8 downloaded, 48 cached, 0 failed)
   Cache efficiency: 85.7% reused
   Success rate: 100.0%
+
+Log Rotation Report:
+  Recent rotation detected - 2 backup files created:
+    Created backup: gracenote2epg.log.2025-W31 (5.2 MB) - weekly rotation
+    Created backup: gracenote2epg.log.2025-W32 (1.7 MB) - weekly rotation
+    Current log: gracenote2epg.log (0.0 MB) - contains current weekly only
+  Log rotation completed successfully
 
 Language detection statistics (using langdetect library with cache):
   French: 1424 episodes (35.6%)
@@ -571,6 +602,15 @@ If you need to switch back to your previous grabber:
 **Problem**: Extended details downloading too many files
 - **Solution**: Cache efficiency improves significantly after first run (96%+ typical)
 
+### Log Issues
+
+**Problem**: Log file growing too large
+- **Solution**: Log rotation is enabled by default with weekly rotation and 14-file retention
+- **Check**: Verify `logrotate_enabled=true` in configuration
+
+**Problem**: Log rotation not working
+- **Solution**: Check rotation messages in log, see [LOG_ROTATION.md](LOG_ROTATION.md) for troubleshooting
+
 For detailed troubleshooting and EPG migration procedures, see the Migration section above.
 
 ### XMLTV Validation
@@ -623,6 +663,7 @@ Debug output includes:
 - Download statistics and timing
 - TVheadend integration status
 - Extended details processing
+- Log rotation activities
 
 ## Development
 
@@ -655,6 +696,8 @@ tv_grab_gracenote2epg/
 ├── setup.py                                   # Installation setup
 ├── PACKAGING.md                               # Development guide
 ├── README.md                                  # This file
+├── CHANGELOG.md                               # Version history and release notes
+├── LOG_ROTATION.md                            # Log rotation documentation
 ├── LICENSE                                    # GPL v3 license
 └── gracenote2epg.xml                          # Config template
 ```
@@ -675,57 +718,4 @@ This modular version builds upon the original zap2epg foundation with enhanced a
 
 ## Version History
 
-### 1.5 - Next Release
-**TODO**:
-- **IMDB**: Add IMDB support
-- **Rotten Tomatoes**: Add Rotten Tomatoes support
-- **Country**: Use actual country of origin, if unavailable discard
-
-### 1.4 - Current Release (dev)
-- **Python wheel compatible**: Now allows generating a python wheel redistributable package
-- **Comprehensive packaging**: Both wheel (.whl) and source (.tar.gz) distributions
-- **Multiple command interfaces**: gracenote2epg, tv_grab_gracenote2epg, and module execution
-- **Enhanced documentation**: Separated user and developer documentation
-
-### 1.3 - Previous Release
-- **Categories Translation**: Automatic English/French/Spanish category translation using .po files
-  - Proper capitalization rules per language (Title Case for English, Sentence case for French/Spanish)
-  - Smart fallback when translation files unavailable
-  - Requires `polib` for full functionality (`pip install polib`)
-- **Credits**: Use proper `<image>` sub-element instead of src attribute - now strict XMLTV DTD compliant
-- **`episode-num xmltv_ns`**: Use spaces around dots per DTD standard
-- **Stereo detection**: Fixed to properly detect STEREO tag
-- **Rating system**: Enhanced with MPAA system support
-- **Language Cache**: Allow handling of malformed XML when scrubbing previous xmltv
-
-### 1.2 - Older Release
-- **Language Cache**: 95-100% cache efficiency with automatic reuse of previous language detections
-- **Enhanced XMLTV Metadata**: New DTD-compliant fields (language, country, video, audio) controlled by xdetails configuration
-- **Modular Language Detection**: New gracenote2epg_language module with LanguageDetector class for better architecture
-- **Performance Optimization**: Eliminates redundant `langdetect` calls, reducing XMLTV generation time from ~15 minutes to ~2-3 minutes
-- **Smart Metadata Logic**: Country detection from zipcode format, stereo audio from tags, aspect ratio from content age
-
-### 1.1 - Older Release
-- **Progress Tracking**: Real-time progress indicators for long operations
-- **Migration Documentation**: Complete migration guide from other EPG grabbers
-- **Directory Permissions Fix**: Create directories with proper 755 permissions instead of 777
-- **Enhanced Synology Detection**: Improved system detection for DSM6/DSM7 path selection
-- **Extended Details Improvements**: Better handling and corrections for xdetails and xdesc configuration
-- **Strict XMLTV DTD Compliance**: Full DTD compliance except for actor photo `src=` attribute extension
-- **XMLTV Generation Progress**: Percentage progress indicators during XML generation (especially useful for langdetect operations)
-- **Download Progress Counters**: Added "x/y" counters for extended details downloads to show remaining downloads
-- **Cache Refresh Options**: New `--refresh X` and `--norefresh` command-line options for flexible cache management
-- **Configuration Version 4**: Updated configuration schema to support new refresh options
-
-### 1.0 - Initial Release
-- **Python Modularization**: Based on edit4ever's script.module.zap2epg with tv_grab_zap2epg improvements and Python modular architecture
-- **Multi-Language Support**: Automatic French/English/Spanish detection with localized translations
-- **Reliable Language Detection**: langdetect library integration with configurable enable/disable options
-- **Enhanced XMLTV Generation**: Line breaks for better Kodi display, proper language attributes
-- **Intelligent Cache Management**: Smart caching with 95%+ efficiency  
-- **Flexible Logging System**: File-based logging with optional console output and language statistics
-- **Improved Error Handling**: Robust downloading and parsing with WAF protection
-- **Better Debugging**: Detailed statistics including language distribution and configurable verbosity
-- **Platform Auto-detection**: Smart directory configuration for Raspberry Pi, Synology, etc.
-- **Full Backward Compatibility**: Works with existing zap2epg configurations and cache
-- **Kodi/TVheadend Integration**: Maintains original design goals for media center use with enhanced formatting
+See **[CHANGELOG.md](CHANGELOG.md)** for detailed release notes and version history.

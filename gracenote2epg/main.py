@@ -19,13 +19,61 @@ from .gracenote2epg_parser import GuideParser
 from .gracenote2epg_tvheadend import TvheadendClient
 from .gracenote2epg_utils import CacheManager, TimeUtils
 from .gracenote2epg_xmltv import XmltvGenerator
+from .gracenote2epg_logrotate import LogRotationManager
 
 # Package version
 from . import __version__
 
 
-def setup_logging(logging_config: dict, log_file: Path):
-    """Setup logging configuration according to specified levels"""
+def check_rotation_status(log_file: Path, rotation_config: dict):
+    """Check and report any rotation that occurred during startup"""
+    if not rotation_config.get('enabled', False):
+        return
+
+    try:
+        log_dir = log_file.parent
+        log_basename = log_file.name
+
+        # Find backup files created recently (last 10 minutes)
+        import time
+        recent_cutoff = time.time() - 600  # 10 minutes ago
+        recent_backups = []
+
+        for backup_file in log_dir.glob(f"{log_basename}.*"):
+            if str(backup_file) != str(log_file):
+                try:
+                    if backup_file.stat().st_mtime > recent_cutoff:
+                        recent_backups.append(backup_file)
+                except:
+                    continue
+
+        if recent_backups:
+            logging.info('Log Rotation Report:')
+            logging.info('  Recent rotation detected - %d backup files created:', len(recent_backups))
+
+            for backup in sorted(recent_backups):
+                try:
+                    size_mb = backup.stat().st_size / (1024*1024)
+                    # Extract period from filename
+                    period = backup.name.replace(f"{log_basename}.", "")
+                    logging.info('    Created backup: %s (%.1f MB) - %s rotation',
+                               backup.name, size_mb, rotation_config.get('interval', 'unknown'))
+                except:
+                    logging.info('    Created backup: %s', backup.name)
+
+            current_size_mb = log_file.stat().st_size / (1024*1024) if log_file.exists() else 0
+            logging.info('    Current log: %s (%.1f MB) - contains current %s only',
+                       log_basename, current_size_mb, rotation_config.get('interval', 'period'))
+            logging.info('  Log rotation completed successfully')
+        else:
+            logging.debug('No recent log rotation detected')
+
+    except Exception as e:
+        logging.debug('Error checking rotation status: %s', str(e))
+
+
+def setup_logging(logging_config: dict, log_file: Path, rotation_config: dict):
+    """Setup logging configuration with optional log rotation"""
     # Create log directory
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -37,15 +85,24 @@ def setup_logging(logging_config: dict, log_file: Path):
     else:  # default
         file_level = logging.INFO
 
-    # Configure file logging
-    logging.basicConfig(
-        filename=log_file,
-        filemode='a',
-        format='%(asctime)s %(levelname)-8s %(message)s',
-        datefmt='%Y/%m/%d %H:%M:%S',
-        level=file_level,
-        force=True  # Override any existing configuration
+    # Create rotating file handler (or standard file handler if rotation disabled)
+    file_handler = LogRotationManager.create_rotating_handler(log_file, rotation_config)
+    file_handler.setLevel(file_level)
+
+    # Set file formatter
+    file_formatter = logging.Formatter(
+        '%(asctime)s %(levelname)-8s %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S'
     )
+    file_handler.setFormatter(file_formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(file_level)
+
+    # Clear any existing handlers and add file handler
+    root_logger.handlers.clear()
+    root_logger.addHandler(file_handler)
 
     # Console logging only if --console is specified (and not --quiet)
     # IMPORTANT: Use stderr to avoid polluting XML output on stdout
@@ -53,16 +110,23 @@ def setup_logging(logging_config: dict, log_file: Path):
         console_handler = logging.StreamHandler(sys.stderr)  # Force stderr for console output
 
         # Set console level to match file level
-        if logging_config['level'] == 'warning':
-            console_handler.setLevel(logging.WARNING)
-        elif logging_config['level'] == 'debug':
-            console_handler.setLevel(logging.DEBUG)
-        else:  # default
-            console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(file_level)
 
         formatter = logging.Formatter('%(levelname)s: %(message)s')
         console_handler.setFormatter(formatter)
-        logging.getLogger().addHandler(console_handler)
+        root_logger.addHandler(console_handler)
+
+    # Log rotation status
+    if rotation_config.get('enabled', False):
+        rotation_status = LogRotationManager.get_rotation_status(log_file, rotation_config)
+        logging.debug('Log rotation status: interval=%s, keep=%d files, current_size=%d bytes, backups=%d',
+                     rotation_status.get('interval', 'unknown'),
+                     rotation_status.get('keep_files', 0),
+                     rotation_status.get('current_log_size', 0),
+                     rotation_status.get('backup_files_count', 0))
+
+    # Return the file handler so it can be used for manual rotation triggering
+    return file_handler
 
 
 def main():
@@ -87,19 +151,6 @@ def main():
         arg_parser = ArgumentParser()
         arg_parser.create_directories_with_proper_permissions()
 
-        # Setup logging
-        logging_config = arg_parser.get_logging_config(args)
-        setup_logging(logging_config, log_file)
-
-        # Add session separator in log
-        logging.info('=' * 60)
-        logging.info('gracenote2epg session started - Version %s', __version__)
-
-        if logging_config['level'] == 'debug':
-            logging.info('Debug logging enabled - all debug information will be logged')
-        if logging_config['console']:
-            logging.info('Console logging enabled - logs also displayed on stderr')
-
         # Load and validate configuration
         config_manager = ConfigManager(config_file)
         config = config_manager.load_config(
@@ -108,6 +159,34 @@ def main():
             langdetect=args.langdetect,
             refresh_hours=args.refresh_hours  # NEW: Pass refresh hours
         )
+
+        # Get log rotation configuration
+        logrotate_config = config_manager.get_logrotate_config()
+
+        # Setup logging with rotation
+        logging_config = arg_parser.get_logging_config(args)
+        file_handler = setup_logging(logging_config, log_file, logrotate_config)
+
+        # FIRST: Check for log rotation (this may truncate/rebuild the log file)
+        if logrotate_config.get('enabled', False) and hasattr(file_handler, '_check_startup_rotation'):
+            try:
+                logging.info('Checking for startup log rotation...')
+                file_handler._check_startup_rotation()
+                logging.info('Startup rotation check completed')
+            except Exception as e:
+                logging.warning('Error during startup rotation check: %s', str(e))
+
+        # Report any rotation that occurred (includes its own separator if needed)
+        check_rotation_status(log_file, logrotate_config)
+
+        # NOW start the normal session logging with consistent separator
+        logging.info('=' * 60)
+        logging.info('gracenote2epg session started - Version %s', __version__)
+
+        if logging_config['level'] == 'debug':
+            logging.info('Debug logging enabled - all debug information will be logged')
+        if logging_config['console']:
+            logging.info('Console logging enabled - logs also displayed on stderr')
 
         # Log configuration summary
         logging.info('Configuration loaded from: %s', config_file)

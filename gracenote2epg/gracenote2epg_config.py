@@ -41,6 +41,9 @@ class ConfigManager:
   <setting id="tvhport">9981</setting>
   <setting id="tvhmatch">true</setting>
   <setting id="chmatch">true</setting>
+  <setting id="logrotate_enabled">true</setting>
+  <setting id="logrotate_interval">weekly</setting>
+  <setting id="logrotate_keep">14</setting>
 </settings>"""
 
     # Valid settings and their types
@@ -79,13 +82,19 @@ class ConfigManager:
         'tvhport': str,
         'tvhmatch': bool,
         'chmatch': bool,
+
+        # Log rotation settings
+        'logrotate_enabled': bool,
+        'logrotate_interval': str,
+        'logrotate_keep': str,
     }
 
     # Settings order for clean output
     SETTINGS_ORDER = [
         'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays', 'refresh',
         'slist', 'stitle', 'xdetails', 'xdesc', 'langdetect', 'epgenre', 'epicon',
-        'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch'
+        'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch',
+        'logrotate_enabled', 'logrotate_interval', 'logrotate_keep'
     ]
 
     def __init__(self, config_file: Path):
@@ -251,6 +260,9 @@ class ConfigManager:
             logging.warning('Invalid refresh setting "%s", using default 48', refresh_setting)
             self.settings['refresh'] = '48'
 
+        # Validate log rotation settings
+        self._validate_logrotate_settings()
+
     def _set_defaults(self):
         """Set default values for missing settings"""
         # Check if langdetect is available for smart default
@@ -277,6 +289,9 @@ class ConfigManager:
             'tvhport': '9981',
             'tvhmatch': True,
             'chmatch': True,
+            'logrotate_enabled': True,      # Enable log rotation by default
+            'logrotate_interval': 'weekly', # Weekly rotation by default
+            'logrotate_keep': '14',         # Keep 14 backup files (2 weeks)
         }
 
         for key, default_value in defaults.items():
@@ -284,6 +299,8 @@ class ConfigManager:
                 self.settings[key] = default_value
                 if key == 'langdetect':
                     logging.debug('Set default langdetect: %s (based on availability)', default_value)
+                elif key.startswith('logrotate_'):
+                    logging.debug('Set default log rotation: %s = %s', key, default_value)
                 else:
                     logging.debug('Set default: %s = %s', key, default_value)
 
@@ -345,6 +362,39 @@ class ConfigManager:
 
             f.write('</settings>\n')
 
+    def _validate_logrotate_settings(self):
+        """Validate log rotation configuration settings"""
+        # Validate logrotate_interval
+        interval = self.settings.get('logrotate_interval', 'weekly').lower()
+        valid_intervals = ['daily', 'weekly', 'monthly']
+
+        if interval not in valid_intervals:
+            logging.warning('Invalid log rotation interval "%s", using default "weekly"', interval)
+            self.settings['logrotate_interval'] = 'weekly'
+        else:
+            self.settings['logrotate_interval'] = interval
+
+        # Validate logrotate_keep
+        keep_setting = self.settings.get('logrotate_keep', '14')
+        try:
+            keep_count = int(keep_setting)
+            if keep_count < 0 or keep_count > 365:
+                logging.warning('Invalid log rotation keep count %d, using default 14', keep_count)
+                self.settings['logrotate_keep'] = '14'
+            elif keep_count == 0:
+                logging.info('Log rotation keep count set to 0 - unlimited backup files')
+        except (ValueError, TypeError):
+            logging.warning('Invalid log rotation keep setting "%s", using default 14', keep_setting)
+            self.settings['logrotate_keep'] = '14'
+
+    def get_logrotate_config(self) -> Dict[str, Any]:
+        """Get log rotation configuration"""
+        return {
+            'enabled': self.settings.get('logrotate_enabled', True),
+            'interval': self.settings.get('logrotate_interval', 'weekly'),
+            'keep_files': int(self.settings.get('logrotate_keep', '14'))
+        }
+
     def get_country(self) -> str:
         """Determine country from zipcode format"""
         zipcode = self.settings.get('zipcode', '')
@@ -387,6 +437,14 @@ class ConfigManager:
             logging.info('  refresh: disabled (use all cached data)')
         else:
             logging.info('  refresh: %d hours (refresh first %d hours of guide)', refresh_hours, refresh_hours)
+
+        # Log rotation configuration
+        logrotate_config = self.get_logrotate_config()
+        if logrotate_config['enabled']:
+            logging.info('  log rotation: enabled (%s, keep %d files)',
+                        logrotate_config['interval'], logrotate_config['keep_files'])
+        else:
+            logging.info('  log rotation: disabled')
 
         # Log configuration logic
         xdetails = self.settings.get('xdetails', False)
