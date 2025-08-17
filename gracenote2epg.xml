@@ -1,42 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<settings version="4">
-  <!-- Required: US ZIP code or Canadian postal code -->
-  <setting id="zipcode">92101</setting>
-
+<settings version="5">
   <!-- Basic guide settings -->
-  <setting id="lineupcode">lineupId</setting>
-  <setting id="lineup">Local Over the Air Broadcast</setting>
-  <setting id="device">-</setting>
-  <setting id="days">7</setting>
-  <setting id="redays">7</setting>
+  <setting id="days">2</setting>                               <!-- Guide duration (1-14 days) -->
+  <setting id="zipcode">92101</setting>                        <!-- US ZIP or Canadian postal code -->
+  <setting id="lineupid">auto</setting>                        <!-- Lineup ID: 'auto', tvtv.com format, or complete format -->
+                                                                <!-- Examples: -->
+                                                                <!--   auto - Auto-detect OTA (default) -->
+                                                                <!--   CAN-OTAJ3B1M4 - Copy from tvtv.com (auto-normalized) -->
+                                                                <!--   CAN-0005993-X - Cable/Satellite provider -->
 
   <!-- Cache management -->
-  <setting id="refresh">48</setting>  <!-- Refresh first 48 hours (0=disabled) -->
+  <setting id="redays">2</setting>                             <!-- Cache retention days (match days) -->
+  <setting id="refresh">48</setting>                           <!-- Forced refresh first 48 hours (0=disabled) -->
 
   <!-- Station filtering -->
-  <setting id="slist"></setting>      <!-- Comma-separated station IDs (empty=all) -->
-  <setting id="stitle">false</setting>
+  <setting id="slist"></setting>                               <!-- Comma-separated station IDs (empty=all) -->
+  <setting id="stitle">false</setting>                         <!-- Safe titles (replace special chars) -->
 
   <!-- Extended details and language detection -->
-  <setting id="xdetails">true</setting>   <!-- Download series details + enhanced metadata -->
-  <setting id="xdesc">true</setting>      <!-- Enhanced descriptions with translations -->
-  <setting id="langdetect">true</setting> <!-- Auto-detect French/English/Spanish -->
+  <setting id="xdetails">true</setting>                        <!-- Download series details + enhanced metadata -->
+  <setting id="xdesc">true</setting>                           <!-- Enhanced descriptions with translations -->
+  <setting id="langdetect">true</setting>                      <!-- Auto-detect French/English/Spanish -->
 
   <!-- Display options -->
-  <setting id="epgenre">3</setting>   <!-- Genre mode: 0=none, 1=primary, 2=EIT, 3=all -->
-  <setting id="epicon">1</setting>    <!-- Icon mode: 0=none, 1=series+episode, 2=episode only -->
+  <setting id="epgenre">3</setting>                            <!-- Genre mode: 0=none, 1=primary, 2=EIT, 3=all -->
+  <setting id="epicon">1</setting>                             <!-- Icon mode: 0=none, 1=series+episode, 2=episode only -->
 
   <!-- TVheadend integration -->
-  <setting id="tvhoff">true</setting>     <!-- Enable TVH integration -->
-  <setting id="tvhurl">127.0.0.1</setting>
-  <setting id="tvhport">9981</setting>
-  <setting id="tvhmatch">true</setting>   <!-- Use TVH channel filtering -->
-  <setting id="chmatch">true</setting>    <!-- Enable channel number matching -->
-  <setting id="usern"></setting>          <!-- TVH username (optional) -->
-  <setting id="passw"></setting>          <!-- TVH password (optional) -->
+  <setting id="tvhoff">true</setting>                          <!-- Enable TVH integration -->
+  <setting id="tvhurl">127.0.0.1</setting>                     <!-- TVH server IP -->
+  <setting id="tvhport">9981</setting>                         <!-- TVH port -->
+  <setting id="tvhmatch">true</setting>                        <!-- Use TVH channel filtering -->
+  <setting id="chmatch">true</setting>                         <!-- Enable channel number matching -->
+  <setting id="usern"></setting>                               <!-- TVH username (optional) -->
+  <setting id="passw"></setting>                               <!-- TVH password (optional) -->
 
   <!-- Log rotation settings -->
-  <setting id="logrotate_enabled">true</setting>   <!-- Enable automatic log rotation -->
-  <setting id="logrotate_interval">weekly</setting><!-- Rotation frequency: daily, weekly, monthly -->
-  <setting id="logrotate_keep">14</setting>        <!-- Number of backup files to keep (0=unlimited) -->
+  <setting id="logrotate_enabled">true</setting>               <!-- Enable automatic log rotation -->
+  <setting id="logrotate_interval">weekly</setting>            <!-- Rotation frequency: daily, weekly, monthly -->
+  <setting id="logrotate_keep">14</setting>                    <!-- Number of backup files to keep (0=unlimited) -->
 </settings>

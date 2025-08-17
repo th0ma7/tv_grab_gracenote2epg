@@ -2,7 +2,8 @@
 gracenote2epg.gracenote2epg_config - Configuration management
 
 Handles XML configuration file parsing, validation, automatic cleanup,
-and migration from older versions.
+and migration from older versions. Now includes simplified lineupid configuration
+that automatically normalizes tvtv.com formats and detects device type.
 """
 
 import logging
@@ -11,7 +12,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Tuple
 
 
 class ConfigManager:
@@ -19,11 +20,9 @@ class ConfigManager:
 
     # Default configuration template
     DEFAULT_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
-<settings version="4">
+<settings version="5">
   <setting id="zipcode">92101</setting>
-  <setting id="lineupcode">lineupId</setting>
-  <setting id="lineup">Local Over the Air Broadcast</setting>
-  <setting id="device">-</setting>
+  <setting id="lineupid">auto</setting>
   <setting id="days">7</setting>
   <setting id="redays">7</setting>
   <setting id="refresh">48</setting>
@@ -51,14 +50,12 @@ class ConfigManager:
         # Required settings
         'zipcode': str,
 
+        # Single lineup setting
+        'lineupid': str,
+
         # Basic settings
-        'lineupcode': str,
-        'lineup': str,
-        'device': str,
         'days': str,
         'redays': str,
-
-        # Cache refresh settings
         'refresh': str,
 
         # Station filtering
@@ -89,9 +86,17 @@ class ConfigManager:
         'logrotate_keep': str,
     }
 
+    # DEPRECATED settings for migration
+    DEPRECATED_SETTINGS = {
+        'auto_lineup': 'lineupid',
+        'lineupcode': 'lineupid',
+        'lineup': 'lineupid',
+        'device': 'lineupid'  # Auto-detected now
+    }
+
     # Settings order for clean output
     SETTINGS_ORDER = [
-        'zipcode', 'lineupcode', 'lineup', 'device', 'days', 'redays', 'refresh',
+        'zipcode', 'lineupid', 'days', 'redays', 'refresh',
         'slist', 'stitle', 'xdetails', 'xdesc', 'langdetect', 'epgenre', 'epicon',
         'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch',
         'logrotate_enabled', 'logrotate_interval', 'logrotate_keep'
@@ -100,7 +105,7 @@ class ConfigManager:
     def __init__(self, config_file: Path):
         self.config_file = Path(config_file)
         self.settings: Dict[str, Any] = {}
-        self.version: str = "4"
+        self.version: str = "5"  # Updated version for new simplified format
 
     def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None,
                     langdetect: Optional[bool] = None, refresh_hours: Optional[int] = None) -> Dict[str, Any]:
@@ -157,21 +162,22 @@ class ConfigManager:
             f.write(self.DEFAULT_CONFIG)
 
     def _parse_config_file(self):
-        """Parse XML configuration file"""
+        """Parse XML configuration file with automatic migration"""
         try:
             tree = ET.parse(self.config_file)
             root = tree.getroot()
 
             logging.info('Reading configuration from: %s', self.config_file)
 
-            # Get version - default to version 4 for consistency
-            self.version = root.attrib.get('version', '4')
+            # Get version - default to version 5 for new simplified format
+            self.version = root.attrib.get('version', '5')
             logging.info('Configuration version: %s', self.version)
 
             # Parse settings
             settings_dict = {}
             valid_settings = {}
             deprecated_settings = []
+            migration_needed = False
 
             for setting in root.findall('setting'):
                 setting_id = setting.get('id')
@@ -193,6 +199,11 @@ class ConfigManager:
                 # Track valid vs deprecated settings
                 if setting_id in self.VALID_SETTINGS:
                     valid_settings[setting_id] = setting_value
+                elif setting_id in self.DEPRECATED_SETTINGS:
+                    deprecated_settings.append(f'{setting_id} (migrated to {self.DEPRECATED_SETTINGS[setting_id]})')
+                    migration_needed = True
+                    # Handle migration
+                    self._handle_deprecated_setting(setting_id, setting_value, valid_settings)
                 elif setting_id.startswith('desc') and re.match(r'desc[0-9]{2}', setting_id):
                     deprecated_settings.append(f'{setting_id} (deprecated custom formatting)')
                 elif setting_id == 'useragent':
@@ -201,9 +212,9 @@ class ConfigManager:
                     deprecated_settings.append(f'{setting_id} (unknown)')
                     logging.warning('Unknown configuration setting: %s = %s', setting_id, setting_value)
 
-            # Clean configuration if deprecated settings found
-            if deprecated_settings:
-                self._clean_config_file(valid_settings, deprecated_settings)
+            # Clean and migrate configuration if needed
+            if deprecated_settings or migration_needed:
+                self._clean_and_migrate_config(valid_settings, deprecated_settings)
 
             # Process settings with type conversion
             self._process_settings(valid_settings)
@@ -214,6 +225,27 @@ class ConfigManager:
         except Exception as e:
             logging.error('Error reading configuration file %s: %s', self.config_file, e)
             raise
+
+    def _handle_deprecated_setting(self, setting_id: str, setting_value: str, valid_settings: Dict[str, str]):
+        """Handle migration of deprecated settings to new lineupid format"""
+        if setting_id == 'auto_lineup':
+            # If auto_lineup was false, we need to check for manual lineupcode
+            if not self._parse_boolean(setting_value):
+                # Will be handled when we process lineupcode
+                pass
+        elif setting_id == 'lineupcode':
+            # Convert old lineupcode to new lineupid format
+            if setting_value and setting_value != 'lineupId':
+                # This was a manual lineup code
+                valid_settings['lineupid'] = setting_value
+                logging.info('Migrated lineupcode "%s" to lineupid', setting_value)
+            else:
+                # Default fallback to auto
+                if 'lineupid' not in valid_settings:
+                    valid_settings['lineupid'] = 'auto'
+        elif setting_id in ['lineup', 'device']:
+            # These are now auto-generated, no migration needed
+            logging.debug('Deprecated setting %s will be auto-generated', setting_id)
 
     def _process_settings(self, settings_dict: Dict[str, str]):
         """Process and type-convert settings"""
@@ -269,17 +301,15 @@ class ConfigManager:
         langdetect_available = self._check_langdetect_available()
 
         defaults = {
-            'lineupcode': 'lineupId',
-            'device': '-',
+            'lineupid': 'auto',  # SIMPLIFIED: Single lineup setting
             'days': '1',
             'redays': '1',
-            'refresh': '48',  # Default 48 hours refresh window
-            'lineup': 'Local Over the Air Broadcast',
+            'refresh': '48',
             'slist': '',
             'stitle': False,
             'xdetails': True,
             'xdesc': True,
-            'langdetect': langdetect_available,  # Smart default based on availability
+            'langdetect': langdetect_available,
             'epgenre': '3',
             'epicon': '1',
             'tvhoff': True,
@@ -289,20 +319,15 @@ class ConfigManager:
             'tvhport': '9981',
             'tvhmatch': True,
             'chmatch': True,
-            'logrotate_enabled': True,      # Enable log rotation by default
-            'logrotate_interval': 'weekly', # Weekly rotation by default
-            'logrotate_keep': '14',         # Keep 14 backup files (2 weeks)
+            'logrotate_enabled': True,
+            'logrotate_interval': 'weekly',
+            'logrotate_keep': '14',
         }
 
         for key, default_value in defaults.items():
             if key not in self.settings or self.settings[key] is None:
                 self.settings[key] = default_value
-                if key == 'langdetect':
-                    logging.debug('Set default langdetect: %s (based on availability)', default_value)
-                elif key.startswith('logrotate_'):
-                    logging.debug('Set default log rotation: %s = %s', key, default_value)
-                else:
-                    logging.debug('Set default: %s = %s', key, default_value)
+                logging.debug('Set default: %s = %s', key, default_value)
 
     def _check_langdetect_available(self) -> bool:
         """Check if langdetect library is available"""
@@ -312,8 +337,8 @@ class ConfigManager:
         except ImportError:
             return False
 
-    def _clean_config_file(self, valid_settings: Dict[str, str], deprecated_list: List[str]):
-        """Clean configuration file by removing deprecated settings"""
+    def _clean_and_migrate_config(self, valid_settings: Dict[str, str], deprecated_list: List[str]):
+        """Clean and migrate configuration file"""
         try:
             if not deprecated_list:
                 logging.debug('No deprecated settings found - configuration file is clean')
@@ -325,13 +350,13 @@ class ConfigManager:
             shutil.copy2(self.config_file, backup_file)
             logging.info('Created configuration backup: %s', backup_file)
 
-            # Write cleaned configuration
+            # Write cleaned and migrated configuration
             self._write_clean_config(valid_settings)
 
-            logging.info('Configuration cleaned successfully')
-            logging.info('  Removed %d deprecated/unknown settings: %s',
+            logging.info('Configuration cleaned and migrated successfully')
+            logging.info('  Removed/migrated %d deprecated settings: %s',
                         len(deprecated_list), ', '.join(deprecated_list))
-            logging.info('  Kept %d valid settings', len(valid_settings))
+            logging.info('  Updated to version 5 with simplified lineupid configuration')
 
         except Exception as e:
             logging.error('Error cleaning configuration file: %s', str(e))
@@ -341,7 +366,7 @@ class ConfigManager:
         """Write cleaned configuration file"""
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n')
-            f.write(f'<settings version="{self.version or "4"}">\n')
+            f.write('<settings version="5">\n')  # Updated version
 
             # Write settings in preferred order
             for setting_id in self.SETTINGS_ORDER:
@@ -387,6 +412,307 @@ class ConfigManager:
             logging.warning('Invalid log rotation keep setting "%s", using default 14', keep_setting)
             self.settings['logrotate_keep'] = '14'
 
+    def display_lineup_detection_test(self, postal_code: str, debug_mode: bool = False) -> bool:
+        """
+        Display lineup detection test results - simplified by default, detailed in debug mode
+
+        Args:
+            postal_code: Postal/ZIP code to test
+            debug_mode: Whether to show detailed debug information
+
+        Returns:
+            bool: True if valid postal code, False otherwise
+        """
+        # Validate postal code format
+        is_valid, country, clean_postal = self.validate_postal_code_format(postal_code)
+
+        if not is_valid:
+            print(f"❌ ERROR: Invalid postal/ZIP code format: {postal_code}")
+            print("   Expected formats:")
+            print("   - US ZIP code: 90210")
+            print("   - Canadian postal: J3B1M4 or J3B 1M4")
+            return False
+
+        # Get country info
+        country_name = 'United States' if country == 'USA' else 'Canada'
+
+        # Generate lineup IDs using new simplified method
+        auto_lineup_config = self._get_auto_lineup_config(clean_postal, country)
+
+        # Display results based on mode
+        if debug_mode:
+            # Mode debug: affichage simplifiÃ© mais avec infos techniques
+            print("=" * 70)
+            print("GRACENOTE2EPG - LINEUP DETECTION (DEBUG MODE)")
+            print("=" * 70)
+            self._display_debug_output(postal_code, clean_postal, country_name, country, auto_lineup_config)
+        else:
+            # Mode normal: affichage simplifiÃ©
+            self._display_simple_output(auto_lineup_config, country, clean_postal)
+
+        return True
+
+    def validate_postal_code_format(self, postal_code: str) -> Tuple[bool, str, str]:
+        """
+        Validate postal code format and return country info
+
+        Args:
+            postal_code: Raw postal code input
+
+        Returns:
+            tuple: (is_valid, country_code, clean_postal)
+        """
+        clean_postal = postal_code.replace(' ', '').upper()
+
+        if clean_postal.isdigit() and len(clean_postal) == 5:
+            return True, 'USA', clean_postal
+        elif re.match(r'^[A-Z][0-9][A-Z][0-9][A-Z][0-9]$', clean_postal):
+            return True, 'CAN', clean_postal
+        else:
+            return False, '', clean_postal
+
+    def _display_simple_output(self, lineup_config: Dict, country: str, clean_postal: str):
+        """Display simplified output for normal mode"""
+        print(f"🌐 GRACENOTE API URL PARAMETERS:")
+        print(f"   lineupId={lineup_config['api_lineup_id']}")
+        print(f"   country={country}")
+        print(f"   postalCode={clean_postal}")
+        print()
+
+        print(f"✅ VALIDATION URLs (manual verification):")
+        print(f"   Auto-generated: {lineup_config['tvtv_url']}")
+        print(f"   Manual lookup:")
+        if country == 'CAN':
+            print(f"     1. Go to https://www.tvtv.ca/")
+            print(f"     2. Enter postal code: {clean_postal}")
+            print(f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}")
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        else:
+            print(f"     1. Go to https://www.tvtv.us/")
+            print(f"     2. Enter ZIP code: {clean_postal}")
+            print(f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}")
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        print()
+
+        print(f"🔗 GRACENOTE API URL FOR TESTING:")
+        example_time = "1755432000"  # Example timestamp
+        test_url = (
+            f"https://tvlistings.gracenote.com/api/grid?"
+            f"aid=orbebb&"
+            f"country={country}&"
+            f"postalCode={clean_postal}&"
+            f"time={example_time}&"
+            f"timespan=3&"
+            f"isOverride=true&"
+            f"userId=-&"
+            f"lineupId={lineup_config['api_lineup_id']}&"
+            f"headendId=lineupId"
+        )
+        print(f"   {test_url}")
+
+    def _display_debug_output(self, postal_code: str, clean_postal: str, country_name: str,
+                             country: str, lineup_config: Dict):
+        """Display debug output with technical information"""
+        print(f"📍 LOCATION INFORMATION:")
+        print(f"   Normalized code:   {clean_postal}")
+        print(f"   Detected country:  {country_name} ({country})")
+        print()
+
+        print(f"🌐 GRACENOTE API URL PARAMETERS:")
+        print(f"   lineupId={lineup_config['api_lineup_id']}")
+        print(f"   country={country}")
+        print(f"   postalCode={clean_postal}")
+        print()
+
+        print(f"✅ VALIDATION URLs (manual verification):")
+        print(f"   Auto-generated: {lineup_config['tvtv_url']}")
+        print(f"   Note: OTA format is {lineup_config['tvtv_lineup_id']} (country + OTA + postal, no -DEFAULT suffix)")
+        print(f"   Cable/Satellite providers use different format: {country}-[ProviderID]-X")
+        print(f"   Manual lookup:")
+        if country == 'CAN':
+            print(f"     1. Go to https://www.tvtv.ca/")
+            print(f"     2. Enter postal code: {clean_postal}")
+            print(f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}")
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        else:
+            print(f"     1. Go to https://www.tvtv.us/")
+            print(f"     2. Enter ZIP code: {clean_postal}")
+            print(f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}")
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        print()
+
+        print(f"🔗 GRACENOTE API URLs FOR TESTING:")
+        example_time = "1755432000"  # Example timestamp
+        test_url = (
+            f"https://tvlistings.gracenote.com/api/grid?"
+            f"aid=orbebb&"
+            f"country={country}&"
+            f"postalCode={clean_postal}&"
+            f"time={example_time}&"
+            f"timespan=3&"
+            f"isOverride=true&"
+            f"userId=-&"
+            f"lineupId={lineup_config['api_lineup_id']}&"
+            f"headendId=lineupId"
+        )
+        print(f"   {test_url}")
+        print()
+
+        print(f"📊 GRACENOTE API - OTHER COMMON PARAMETERS:")
+        print(f"   • &device=[-|X]                    Device type: - for Over-the-Air, X for cable/satellite")
+        print(f"   • &pref=16%2C128                   Preference codes (16,128): channel lineup preferences")
+        print(f"   • &timezone=America%2FNew_York     User timezone for schedule times (URL-encoded)")
+        print(f"   • &languagecode=en-us              Content language: en-us, fr-ca, es-us, etc.")
+        print(f"   • &TMSID=                          Tribune Media Services ID (legacy, usually empty)")
+        print(f"   • &AffiliateID=lat                 Partner/affiliate identifier (lat=local affiliate)")
+        print()
+
+        print(f"💥 MANUAL DOWNLOAD:")
+        print(f"⚠️  NOTE: Using browser-like headers to bypass AWS WAF")
+        print()
+        print(f"curl -s -H \"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\" \\")
+        print(f"     -H \"Accept: application/json, text/html, application/xhtml+xml, */*\" \\")
+        print(f"     \"{test_url}\" > out.json")
+        print()
+
+        print(f"🔧 RECOMMENDED CONFIGURATION:")
+        country_full = 'Canada' if country == 'CAN' else 'United States'
+        print(f"   <!-- Simplified configuration (auto-detection) -->")
+        print(f"   <setting id=\"zipcode\">{clean_postal}</setting>")
+        print(f"   <setting id=\"lineupid\">auto</setting>")
+        print()
+        print(f"   <!-- Alternative: Copy tvtv.com lineup ID directly -->")
+        print(f"   <!-- <setting id=\"lineupid\">{lineup_config['tvtv_lineup_id']}</setting> -->")
+        print()
+        print(f"   <!-- For Cable/Satellite providers: -->")
+        print(f"   <!-- <setting id=\"lineupid\">{country}-[ProviderID]-X</setting> -->")
+        print(f"   <!-- Example: <setting id=\"lineupid\">{country}-0005993-X</setting> for Videotron -->")
+        print()
+
+        print("=" * 70)
+        print("💡 NEXT STEPS:")
+        print("1. Verify the validation URLs show your local channels")
+        print("2. Update your gracenote2epg.xml with the recommended configuration")
+        print("3. Run: tv_grab_gracenote2epg --days 1 --console")
+        print("4. Look for 'Auto-detected lineupID' in the logs")
+        print("5. Confirm no HTTP 400 errors in download attempts")
+        print("=" * 70)
+
+    def normalize_lineup_id(self, lineupid: str, country: str, postal_code: str) -> str:
+        """
+        Normalize lineup ID to API format
+
+        Args:
+            lineupid: Raw lineup ID from config (auto, tvtv format, or complete)
+            country: Country code (USA/CAN)
+            postal_code: Postal/ZIP code
+
+        Returns:
+            Normalized lineup ID for API use
+        """
+        if not lineupid or lineupid.lower() == "auto":
+            # Auto-generate OTA lineup ID
+            return f"{country}-OTA{postal_code}-DEFAULT"
+
+        elif not lineupid.endswith("-DEFAULT") and not lineupid.endswith("-X"):
+            # Format from tvtv.com (e.g. CAN-OTAJ3B1M4) → Add -DEFAULT for API
+            return f"{lineupid}-DEFAULT"
+
+        else:
+            # Already complete format (e.g. CAN-OTAJ3B1M4-DEFAULT or CAN-0005993-X)
+            return lineupid
+
+    def detect_device_type(self, normalized_lineup_id: str) -> str:
+        """
+        Auto-detect device type from lineup ID
+
+        Args:
+            normalized_lineup_id: Normalized lineup ID
+
+        Returns:
+            Device type: "-" for OTA, "X" for cable/satellite
+        """
+        if "OTA" in normalized_lineup_id:
+            return "-"  # Over-the-Air
+        elif normalized_lineup_id.endswith("-X"):
+            return "X"  # Cable/Satellite
+        else:
+            return "-"  # Default to OTA
+
+    def generate_description(self, normalized_lineup_id: str, country: str) -> str:
+        """
+        Auto-generate description from lineup ID
+
+        Args:
+            normalized_lineup_id: Normalized lineup ID
+            country: Country code
+
+        Returns:
+            Human-readable description
+        """
+        country_name = 'United States' if country == 'USA' else 'Canada'
+
+        if "OTA" in normalized_lineup_id:
+            return f"Local Over the Air Broadcast ({country_name})"
+        elif normalized_lineup_id.endswith("-X"):
+            return f"Cable/Satellite Provider ({country_name})"
+        else:
+            return f"TV Lineup ({country_name})"
+
+    def get_lineup_config(self) -> Dict[str, str]:
+        """Get lineup configuration with automatic normalization and detection"""
+        lineupid = self.settings.get('lineupid', 'auto')
+        postal_code = self.settings.get('zipcode', '')
+        country = self.get_country()
+
+        # Normalize lineup ID
+        normalized_lineup_id = self.normalize_lineup_id(lineupid, country, postal_code)
+
+        # Auto-detect device type
+        device_type = self.detect_device_type(normalized_lineup_id)
+
+        # Auto-generate description
+        description = self.generate_description(normalized_lineup_id, country)
+
+        # Determine if this was auto-detected
+        auto_detected = not lineupid or lineupid.lower() == "auto"
+
+        # REMOVED: Logging moved to log_config_summary() to avoid duplication
+
+        return {
+            'lineup_id': normalized_lineup_id,      # Full API format
+            'headend_id': 'lineupId',               # Always literal 'lineupId' for API
+            'device_type': device_type,             # Auto-detected device type
+            'description': description,             # Auto-generated description
+            'auto_detected': auto_detected,
+            'original_config': lineupid,            # Original config value
+            'country': country,
+            'postal_code': postal_code
+        }
+
+    def _get_auto_lineup_config(self, postal_code: str, country: str) -> Dict[str, str]:
+        """Get auto-generated lineup configuration for display purposes"""
+        # Generate OTA lineup IDs
+        base_lineup = f"OTA{postal_code}"
+        tvtv_lineup_id = f"{country}-{base_lineup}"
+        api_lineup_id = f"{country}-{base_lineup}-DEFAULT"
+
+        # Generate tvtv.com URL
+        if country == 'CAN':
+            postal_for_url = postal_code.lower()
+            tvtv_url = f"https://www.tvtv.ca/qc/saint-jean-sur-richelieu/{postal_for_url}/lu{tvtv_lineup_id}"
+        else:
+            tvtv_url = f"https://www.tvtv.us/ca/beverly-hills/{postal_code}/lu{tvtv_lineup_id}"
+
+        return {
+            'tvtv_lineup_id': tvtv_lineup_id,       # Format for tvtv.com
+            'api_lineup_id': api_lineup_id,         # Format for API
+            'tvtv_url': tvtv_url,                   # Complete tvtv.com URL
+            'device_type': '-',                     # OTA device type
+            'country': country,
+            'postal_code': postal_code
+        }
+
     def get_logrotate_config(self) -> Dict[str, Any]:
         """Get log rotation configuration"""
         return {
@@ -426,7 +752,13 @@ class ConfigManager:
         """Log configuration summary"""
         logging.info('Configuration values processed:')
         logging.info('  zipcode: %s', self.settings.get('zipcode'))
-        logging.info('  lineup: %s', self.settings.get('lineup'))
+
+        # Log simplified lineup configuration
+        lineup_config = self.get_lineup_config()
+        logging.info('  lineupid: %s → %s', lineup_config['original_config'], lineup_config['lineup_id'])
+        logging.info('  device: %s (auto-detected)', lineup_config['device_type'])
+        logging.info('  description: %s', lineup_config['description'])
+
         logging.info('  xdetails (download extended data): %s', self.settings.get('xdetails'))
         logging.info('  xdesc (use extended descriptions): %s', self.settings.get('xdesc'))
         logging.info('  langdetect (automatic language detection): %s', self.settings.get('langdetect'))

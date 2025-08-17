@@ -3,6 +3,7 @@ gracenote2epg.gracenote2epg_parser - Guide data parsing
 
 Handles parsing of TV guide data from gracenote.com, including stations,
 episodes, and extended series details with intelligent caching.
+Now uses simplified lineupid configuration with automatic normalization.
 """
 
 import calendar
@@ -10,6 +11,7 @@ import json
 import logging
 import re
 import time
+import urllib.parse
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -29,11 +31,25 @@ class GuideParser:
         self.schedule: Dict = {}
 
     def optimized_guide_download(self, grid_time_start: float, day_hours: int,
-                                 lineupcode: str, country: str, device: str,
-                                 zipcode: str, refresh_hours: int = 48) -> bool:
-        """Optimized guide download with intelligent caching"""
+                                 config_manager, refresh_hours: int = 48) -> bool:
+        """Optimized guide download with simplified lineup configuration"""
 
-        logging.info('Starting optimized guide download')
+        logging.info('Starting optimized guide download (with simplified lineup configuration)')
+
+        # Get simplified lineup configuration
+        lineup_config = config_manager.get_lineup_config()
+
+        # Log configuration used (debug level to avoid duplication)
+        if lineup_config['auto_detected']:
+            logging.debug('Using auto-detected lineup: %s (device: %s)',
+                         lineup_config['lineup_id'], lineup_config['device_type'])
+        else:
+            logging.debug('Using configured lineup: %s → %s (device: %s)',
+                         lineup_config['original_config'], lineup_config['lineup_id'],
+                         lineup_config['device_type'])
+
+        logging.info('  Country: %s, Postal code: %s',
+                    lineup_config['country'], lineup_config['postal_code'])
         logging.info('  Refresh window: first %d hours will be re-downloaded', refresh_hours)
         logging.info('  Guide duration: %d blocks (%d hours)', day_hours, day_hours * 3)
 
@@ -49,10 +65,8 @@ class GuideParser:
             standard_block_time = TimeUtils.get_standard_block_time(grid_time)
             filename = standard_block_time.strftime('%Y%m%d%H') + '.json.gz'
 
-            # Build download URL
-            url = ('http://tvlistings.gracenote.com/api/grid?aid=orbebb&TMSID=&AffiliateID=lat&FromPage=TV%20Grid&lineupId=&timespan=3&headendId=' +
-                   str(lineupcode) + '&country=' + str(country) + '&device=' + str(device) + '&postalCode=' +
-                   str(zipcode) + '&time=' + str(int(grid_time)) + '&isOverride=true&pref=-&userId=-')
+            # Build download URL with simplified configuration
+            url = self._build_gracenote_url(lineup_config, grid_time)
 
             # Download block safely
             if self.cache_manager.download_guide_block_safe(self.downloader, grid_time, filename, url, refresh_hours):
@@ -93,7 +107,51 @@ class GuideParser:
         logging.info('  Cache efficiency: %.1f%% reused', (cached_count/total_blocks*100) if total_blocks > 0 else 0)
         logging.info('  Success rate: %.1f%%', success_rate)
 
+        # Log URL format used (debug level to avoid duplication)
+        if lineup_config['auto_detected']:
+            logging.debug('API calls used auto-detected lineup configuration')
+        else:
+            logging.debug('API calls used configured lineup: %s', lineup_config['original_config'])
+
         return success_rate >= 80  # Consider successful if 80%+ blocks available
+
+    def _build_gracenote_url(self, lineup_config: Dict, grid_time: float) -> str:
+        """Build Gracenote URL with simplified lineup configuration"""
+
+        base_url = 'http://tvlistings.gracenote.com/api/grid'
+
+        # Parameters in optimal order for maximum compatibility
+        params = [
+            ('aid', 'orbebb'),
+            ('TMSID', ''),
+            ('AffiliateID', 'lat'),
+            ('lineupId', lineup_config.get('lineup_id', '')),        # Normalized lineup ID
+            ('timespan', '3'),
+            ('headendId', lineup_config.get('headend_id', 'lineupId')),  # Always 'lineupId'
+            ('country', lineup_config.get('country', 'USA')),
+            ('device', lineup_config.get('device_type', '-')),       # Auto-detected device type
+            ('postalCode', lineup_config.get('postal_code', '')),
+            ('time', str(int(grid_time))),
+            ('isOverride', 'true'),
+            ('pref', '-'),
+            ('userId', '-')
+        ]
+
+        # Build URL
+        query_string = '&'.join([f'{key}={urllib.parse.quote(str(value))}' for key, value in params])
+        full_url = f"{base_url}?{query_string}"
+
+        # Debug logging (without exposing full URL to avoid spam)
+        if lineup_config.get('auto_detected'):
+            logging.debug('Built URL with auto-detected lineup: %s, device: %s',
+                         lineup_config.get('lineup_id', ''), lineup_config.get('device_type', ''))
+        else:
+            logging.debug('Built URL with configured lineup: %s → %s, device: %s',
+                         lineup_config.get('original_config', ''),
+                         lineup_config.get('lineup_id', ''),
+                         lineup_config.get('device_type', ''))
+
+        return full_url
 
     def parse_stations(self, content: bytes):
         """Parse station information from guide data"""

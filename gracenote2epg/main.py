@@ -257,14 +257,12 @@ def main():
             guide_parser = GuideParser(cache_manager, downloader, tvh_client)
 
             # Download guide blocks with configurable refresh
+            # Passes config_manager instead of individual parameters
             guide_success = guide_parser.optimized_guide_download(
                 grid_time_start=grid_time_start,
                 day_hours=day_hours,
-                lineupcode=config.get('lineupcode', 'lineupId'),
-                country=country,
-                device=config.get('device', '-'),
-                zipcode=config.get('zipcode'),
-                refresh_hours=refresh_hours  # NEW: Use configurable refresh hours
+                config_manager=config_manager,
+                refresh_hours=refresh_hours
             )
 
             if not guide_success:
@@ -315,15 +313,15 @@ def main():
             # Output XMLTV to stdout ONLY if not redirected to file
             # XMLTV standard: XML goes to stdout, logs go to stderr or file
             if args.output is None:
-                # Pas de --output spécifié, afficher le XML sur stdout
+                # Pas de --output spÃ©cifiÃ©, afficher le XML sur stdout
                 try:
                     with open(xmltv_file, 'r', encoding='utf-8') as f:
-                        print(f.read(), end='')  # end='' pour éviter une ligne vide supplémentaire
+                        print(f.read(), end='')  # end='' pour Ã©viter une ligne vide supplÃ©mentaire
                 except Exception as e:
                     logging.error('Could not output XMLTV to stdout: %s', str(e))
                     return 1
             else:
-                # --output spécifié, le XML est dans le fichier
+                # --output spÃ©cifiÃ©, le XML est dans le fichier
                 logging.info('XMLTV output written to: %s', args.output)
 
         logging.info('Script completed successfully')

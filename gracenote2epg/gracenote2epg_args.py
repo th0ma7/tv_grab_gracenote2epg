@@ -2,7 +2,7 @@
 gracenote2epg.gracenote2epg_args - Command line argument parsing
 
 Handles all command-line arguments and validation for the gracenote2epg grabber.
-Provides baseline XMLTV grabber capabilities.
+Provides baseline XMLTV grabber capabilities and lineup testing functionality.
 """
 
 import argparse
@@ -35,9 +35,20 @@ Examples:
   gracenote2epg --capabilities
   gracenote2epg --days 7 --zip 92101
   gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
+  gracenote2epg --show-lineup --postal J3B1M4           # Test lineup detection
+  gracenote2epg --show-lineup --zip 90210               # Test US ZIP code
+  gracenote2epg --show-lineup --code "J3B 1M4"          # Test with space
+  gracenote2epg --show-lineup --zip 90210 --debug       # Detailed debug output
   gracenote2epg --days 7 --zip 92101 --langdetect false
   gracenote2epg --days 7 --zip 92101 --norefresh
   gracenote2epg --days 7 --zip 92101 --refresh 24
+
+Testing and Validation:
+  --show-lineup           Show auto-detected lineup parameters and validation URL
+                          Must be combined with --zip, --postal, or --code
+                          Useful for testing different postal/ZIP codes before configuration
+                          Exits immediately after showing results (no download)
+                          Use --debug for detailed technical information
 
 Configuration:
   Default config: ~/gracenote2epg/conf/gracenote2epg.xml
@@ -58,6 +69,12 @@ Cache Refresh Options:
 Language Detection:
   --langdetect    Enable/disable automatic language detection (requires langdetect library)
                   Default: auto-enabled if langdetect is installed, disabled otherwise
+
+LineupID Auto-Detection:
+  When enabled (auto_lineup=true), gracenote2epg automatically generates
+  lineupID parameters compatible with zap2xml format:
+  - Canada: CAN-OTAJ3B1M4-DEFAULT (from postal code J3B1M4)
+  - USA:    USA-OTA90210-DEFAULT   (from ZIP code 90210)
             """
         )
 
@@ -78,6 +95,13 @@ Language Detection:
             '--capabilities', '-c',
             action='store_true',
             help='Show capabilities and exit'
+        )
+
+        # LineupID detection and testing (flag sans argument)
+        parser.add_argument(
+            '--show-lineup',
+            action='store_true',
+            help='Show auto-detected lineupID for configured postal/ZIP code and exit (testing mode)'
         )
 
         # Log level selection (can be combined with --console)
@@ -203,6 +227,24 @@ Language Detection:
         if args.capabilities:
             print("baseline")
             sys.exit(0)
+
+        # Handle --show-lineup avec passage du debug mode
+        if args.show_lineup:
+            location_code = args.zip or args.postal or args.code
+            if not location_code:
+                self.parser.error("--show-lineup requires one of: --zip, --postal, or --code")
+
+            # Delegated to ConfigManager for the lineup logic with debug mode
+            from .gracenote2epg_config import ConfigManager
+            temp_config = ConfigManager(Path('temp'))  # Dummy path for testing
+
+            # Pass debug mode to function
+            debug_mode = args.debug if hasattr(args, 'debug') else False
+
+            if not temp_config.display_lineup_detection_test(location_code, debug_mode):
+                sys.exit(1)  # Exit with error if invalid postal code
+
+            sys.exit(0)  # Exit successfully after showing lineup info
 
         # Validate arguments
         self._validate_args(args)

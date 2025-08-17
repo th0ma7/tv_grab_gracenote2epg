@@ -20,6 +20,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **📝 Built-in Log Rotation**: Intelligent multi-period log management
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
 
+
 **IMPORTANT:** Raspberry Pi setup was not tested - requiring testers to confirm functionality or make any necessary changes.
 
 ## Installation
@@ -144,6 +145,19 @@ tv_grab_gracenote2epg --days 3 --postal J3B1M4 --warning --console
 
 # Save to custom file
 tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml
+```
+
+### Lineup Testing and Configuration
+
+```bash
+# Test lineup detection (simplified output)
+tv_grab_gracenote2epg --show-lineup --zip 92101
+
+# Test with detailed technical information
+tv_grab_gracenote2epg --show-lineup --zip 92101 --debug
+
+# Test Canadian postal code
+tv_grab_gracenote2epg --show-lineup --postal J3B1M4
 ```
 
 ### Dependencies Information
@@ -295,14 +309,42 @@ See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubl
 <setting id="zipcode">92101</setting>  <!-- US ZIP or Canadian postal code -->
 ```
 
+### Simplified Lineup Configuration ⭐ NEW
+```xml
+<setting id="lineupid">auto</setting>  <!-- Ultra-simple lineup configuration -->
+```
+
+**Accepted values for `lineupid`:**
+- **`auto`** (default) - Auto-detect Over-the-Air lineup
+- **`CAN-OTAJ3B1M4`** - Copy directly from tvtv.com (auto-normalized to API format)
+- **`CAN-0005993-X`** - Cable/Satellite provider (complete format)
+
+**Examples:**
+```xml
+<!-- Over-the-Air (antenna) - Default -->
+<setting id="lineupid">auto</setting>
+
+<!-- Copy from tvtv.com: Remove 'lu' prefix from URL -->
+<setting id="lineupid">CAN-OTAJ3B1M4</setting>
+
+<!-- Cable/Satellite provider (e.g., Videotron) -->
+<setting id="lineupid">CAN-0005993-X</setting>
+```
+
+**How to find your lineup ID:**
+1. Go to [tvtv.ca](https://www.tvtv.ca) (Canada) or [tvtv.us](https://www.tvtv.us) (USA)
+2. Enter your postal/ZIP code
+3. **For Over-the-Air**: Click "Broadcast" → "Local Over the Air"
+4. **For Cable/Satellite**: Select your provider
+5. Copy the lineup ID from the URL (remove the `lu` prefix)
+
+📖 **For detailed lineup configuration guide, see [LINEUPID.md](LINEUPID.md)**
+
 ### Core Settings
 ```xml
 <setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
 <setting id="redays">7</setting>        <!-- Cache retention days (match days) -->
 <setting id="refresh">48</setting>      <!-- Cache refresh window (hours, 0=disabled) -->
-<setting id="lineup">Local Over the Air Broadcast</setting>  <!-- Lineup description -->
-<setting id="lineupcode">lineupId</setting>  <!-- Internal lineup identifier -->
-<setting id="device">-</setting>        <!-- Device identifier for API -->
 ```
 
 ### Extended Details with Multi-Language Support
@@ -409,6 +451,14 @@ Language detection statistics (using langdetect library with cache):
 tv_grab_gracenote2epg --description      # Show grabber description
 tv_grab_gracenote2epg --version          # Show version
 tv_grab_gracenote2epg --capabilities     # Show capabilities
+```
+
+### Lineup Testing
+
+```bash
+tv_grab_gracenote2epg --show-lineup --zip 92101        # Test lineup detection
+tv_grab_gracenote2epg --show-lineup --zip 92101 --debug # Detailed technical info
+tv_grab_gracenote2epg --show-lineup --postal J3B1M4    # Canadian postal code
 ```
 
 ### Logging Control
@@ -581,6 +631,14 @@ If you need to switch back to your previous grabber:
 - **Solution**: Install full features: `pip install gracenote2epg[full]`
 - **Check**: `python -c "import polib; print('OK')"`
 
+### Configuration Issues
+
+**Problem**: Confused about lineup configuration
+- **Solution**: Use `--show-lineup` to test: `tv_grab_gracenote2epg --show-lineup --zip 92101`
+- **For OTA**: Just use `<setting id="lineupid">auto</setting>`
+- **For Cable/Satellite**: Copy lineup ID from tvtv.com URL (remove `lu` prefix)
+- **Documentation**: See [LINEUPID.md](LINEUPID.md) for detailed lineup configuration guide
+
 ### TVheadend Issues
 
 **Problem**: Channels detected but no programs after re-run
@@ -588,7 +646,8 @@ If you need to switch back to your previous grabber:
 
 **Problem**: No channels detected at all
 - **Solution**: Check `gracenote2epg.xml` configuration
-- **Verify**: TVheadend integration settings (`tvhurl`, `tvhport`, `usern`, `passw`, `tvhmatch`, `chmatch`)
+- **Verify**: ZIP/postal code is correct
+- **Test**: Use `--show-lineup` to verify lineup detection
 
 **Problem**: Extended details not showing
 - **Solution**: Verify `xdetails=true` and `xdesc=true` in configuration
@@ -696,6 +755,7 @@ tv_grab_gracenote2epg/
 ├── setup.py                                   # Installation setup
 ├── PACKAGING.md                               # Development guide
 ├── README.md                                  # This file
+├── LINEUPID.md                                # Lineup configuration guide
 ├── CHANGELOG.md                               # Version history and release notes
 ├── LOG_ROTATION.md                            # Log rotation documentation
 ├── LICENSE                                    # GPL v3 license
