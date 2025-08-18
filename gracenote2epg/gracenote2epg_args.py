@@ -6,6 +6,7 @@ Provides baseline XMLTV grabber capabilities and lineup testing functionality.
 """
 
 import argparse
+import logging
 import re
 import sys
 from pathlib import Path
@@ -35,11 +36,15 @@ Examples:
   gracenote2epg --capabilities
   gracenote2epg --days 7 --zip 92101
   gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
-  gracenote2epg --show-lineup --postal J3B1M4           # Test lineup detection
-  gracenote2epg --show-lineup --zip 90210               # Test US ZIP code
-  gracenote2epg --show-lineup --code "J3B 1M4"          # Test with space
-  gracenote2epg --show-lineup --zip 90210 --debug       # Detailed debug output
+  gracenote2epg --show-lineup --postal J3B1M4                  # Test lineup detection
+  gracenote2epg --show-lineup --zip 90210                      # Test US ZIP code
+  gracenote2epg --show-lineup --code "J3B 1M4"                 # Test with space
+  gracenote2epg --show-lineup --zip 90210 --debug              # Detailed debug output
   gracenote2epg --days 7 --zip 92101 --langdetect false
+  gracenote2epg --days 7 --zip 92101 --lineupid auto           # Auto-detection with required ZIP
+  gracenote2epg --days 7 --lineupid CAN-OTAJ3B1M4              # Deduces postal J3B1M4
+  gracenote2epg --days 7 --lineupid USA-OTA90210               # Deduces ZIP 90210
+  gracenote2epg --days 7 --zip 92101 --lineupid CAN-OTAJ3B1M4  # Error: inconsistent
   gracenote2epg --days 7 --zip 92101 --norefresh
   gracenote2epg --days 7 --zip 92101 --refresh 24
 
@@ -69,6 +74,19 @@ Cache Refresh Options:
 Language Detection:
   --langdetect    Enable/disable automatic language detection (requires langdetect library)
                   Default: auto-enabled if langdetect is installed, disabled otherwise
+
+LineupID Configuration:
+  --lineupid      Override lineup configuration from command line
+                  Examples: auto, CAN-OTAJ3B1M4, CAN-0005993-X
+                  Supports all formats: auto-detection, tvtv.com format, complete provider format
+                  Location extraction: OTA lineups automatically provide postal/ZIP codes
+                  (e.g., CAN-OTAJ3B1M4 provides postal code J3B1M4)
+
+Location Intelligence:
+  When using OTA lineups, postal/ZIP codes are automatically extracted:
+  - CAN-OTAJ3B1M4 → postal code J3B1M4 (Canada)
+  - USA-OTA90210 → ZIP code 90210 (United States)
+  If both --lineupid and --zip/--postal are provided, they must be consistent
 
 LineupID Auto-Detection:
   When enabled (auto_lineup=true), gracenote2epg automatically generates
@@ -175,6 +193,13 @@ LineupID Auto-Detection:
             help='Enable/disable automatic language detection (requires langdetect library)'
         )
 
+        # Lineup configuration
+        parser.add_argument(
+            '--lineupid',
+            type=str,
+            help='Override lineup configuration (auto, CAN-OTAJ3B1M4, CAN-0005993-X, etc.)'
+        )
+
         # Location codes
         location_group = parser.add_mutually_exclusive_group()
         location_group.add_argument(
@@ -249,8 +274,8 @@ LineupID Auto-Detection:
         # Validate arguments
         self._validate_args(args)
 
-        # Normalize location codes
-        self._normalize_location(args)
+        # Process lineup and location with intelligent extraction and validation
+        self._process_lineup_and_location(args)
 
         # Normalize langdetect option
         self._normalize_langdetect(args)
@@ -277,31 +302,116 @@ LineupID Auto-Detection:
             if args.refresh < 0 or args.refresh > 168:  # 0 to 7 days
                 self.parser.error(f"Parameter [--refresh] must be 0-168 hours, got: {args.refresh}")
 
-        # Validate location codes
-        location_code = args.zip or args.postal or args.code
-        if location_code:
-            # Remove spaces for validation
-            clean_code = location_code.replace(' ', '')
+        # Validate lineupid parameter (basic validation - more detailed validation in ConfigManager)
+        if args.lineupid is not None:
+            lineupid = args.lineupid.strip()
+            if not lineupid:
+                self.parser.error("Parameter [--lineupid] cannot be empty")
+            # Additional validation will be done in ConfigManager.normalize_lineup_id()
 
-            if not (self.CA_CODE_PATTERN.match(location_code) or
-                   self.US_CODE_PATTERN.match(clean_code)):
+    def _process_lineup_and_location(self, args):
+        """Process lineup and location arguments with intelligent extraction and validation"""
+        location_code = args.zip or args.postal or args.code
+        lineupid = args.lineupid
+
+        # Extract postal/ZIP from lineupid if it's an OTA format
+        extracted_location = None
+        if lineupid:
+            extracted_location = self._extract_location_from_lineup(lineupid)
+
+        # Case 1: Both lineupid (with location) and explicit location provided
+        if extracted_location and location_code:
+            # Verify consistency
+            clean_extracted = extracted_location.replace(' ', '').upper()
+            clean_provided = location_code.replace(' ', '').upper()
+
+            if clean_extracted != clean_provided:
+                # Normalize display for error message (remove spaces)
+                normalized_extracted = extracted_location.replace(' ', '')
                 self.parser.error(
-                    f"Invalid location code: {location_code}. "
-                    "Expected US ZIP (12345) or Canadian postal (A1A 1A1)"
+                    f"Inconsistent location codes: lineupid contains '{normalized_extracted}' "
+                    f"but explicit location is '{location_code}'. They must match."
                 )
 
-    def _normalize_location(self, args):
-        """Normalize location code into a single field"""
-        # Consolidate location codes into single field
-        location_code = args.zip or args.postal or args.code
-        if location_code:
-            # Remove spaces from postal codes
-            args.location_code = location_code.replace(' ', '')
+            # Use the explicitly provided format (might have spaces)
+            final_location = location_code
+            args.location_source = 'explicit'  # For logging purposes
+
+        # Case 2: Only lineupid provided with extractable location
+        elif extracted_location and not location_code:
+            final_location = extracted_location
+            args.location_source = 'extracted'  # For logging purposes
+            logging.debug(f"Extracted location '{extracted_location}' from lineupid '{lineupid}'")
+
+        # Case 3: Only explicit location provided (or lineupid without extractable location)
+        elif location_code:
+            final_location = location_code
+            args.location_source = 'explicit'  # For logging purposes
+
+        # Case 4: Neither provided
+        else:
+            final_location = None
+            args.location_source = None
+
+        # Validate the final location code if we have one
+        if final_location:
+            clean_code = final_location.replace(' ', '')
+            if not (self.CA_CODE_PATTERN.match(final_location) or
+                   self.US_CODE_PATTERN.match(clean_code)):
+                source = "lineupid" if extracted_location and not location_code else "explicit parameter"
+                # Normalize display for error message (remove spaces)
+                display_location = final_location.replace(' ', '') if extracted_location and not location_code else final_location
+                self.parser.error(
+                    f"Invalid location code from {source}: {display_location}. "
+                    "Expected US ZIP (12345) or Canadian postal (A1A1A1)"
+                )
+
+        # Store the final result
+        if final_location:
+            args.location_code = final_location.replace(' ', '')
         else:
             args.location_code = None
 
+        # Store original values for logging - normalize extracted_location display
+        args.original_lineupid = lineupid
+        args.extracted_location = extracted_location.replace(' ', '') if extracted_location else None
+
         # Clean up individual fields
         del args.zip, args.postal, args.code
+
+    def _extract_location_from_lineup(self, lineupid: str) -> Optional[str]:
+        """
+        Extract postal/ZIP code from lineup ID if it's in OTA format
+
+        Args:
+            lineupid: Lineup ID (e.g., 'CAN-OTAJ3B1M4', 'USA-OTA90210', 'CAN-0005993-X')
+
+        Returns:
+            Extracted location code or None if not extractable
+        """
+        import re
+
+        # Pattern for OTA lineups: COUNTRY-OTA<LOCATION>[-DEFAULT]
+        # Examples: CAN-OTAJ3B1M4, USA-OTA90210, CAN-OTAJ3B1M4-DEFAULT
+        ota_pattern = re.compile(r'^(CAN|USA)-OTA([A-Z0-9]+)(?:-DEFAULT)?$', re.IGNORECASE)
+
+        match = ota_pattern.match(lineupid.strip())
+        if match:
+            country = match.group(1).upper()
+            location = match.group(2).upper()
+
+            # Validate extracted location format
+            if country == 'CAN':
+                # Canadian postal: should be A1A1A1 format
+                if re.match(r'^[A-Z][0-9][A-Z][0-9][A-Z][0-9]$', location):
+                    # Format as A1A 1A1 (with space)
+                    return f"{location[:3]} {location[3:]}"
+            elif country == 'USA':
+                # US ZIP: should be 5 digits
+                if re.match(r'^[0-9]{5}$', location):
+                    return location
+
+        return None
 
     def _normalize_langdetect(self, args):
         """Normalize langdetect option"""

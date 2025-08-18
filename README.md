@@ -17,7 +17,7 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
 - **🎯 Extended Program Details**: Optional enhanced descriptions
 - **🛡️ Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
-- **📝 Built-in Log Rotation**: Intelligent multi-period log management
+- **📄 Built-in Log Rotation**: Intelligent multi-period log management
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
 
 
@@ -85,6 +85,10 @@ gracenote2epg is available in two distribution formats:
 gracenote2epg --version              # Primary command
 tv_grab_gracenote2epg --capabilities # XMLTV standard name
 python -m gracenote2epg --version    # Module execution
+
+# Examples with lineup configuration
+tv_grab_gracenote2epg --days 7 --zip 92101 --lineupid auto           # Auto-detection requires ZIP
+tv_grab_gracenote2epg --days 7 --lineupid CAN-OTAJ3B1M4              # Auto-extracts postal J3B1M4
 ```
 
 **From source distribution** (extract .tar.gz):
@@ -142,6 +146,15 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --console
 
 # Use Canadian postal code
 tv_grab_gracenote2epg --days 3 --postal J3B1M4 --warning --console
+
+# Auto-detection (requires ZIP/postal code)
+tv_grab_gracenote2epg --days 7 --zip 92101 --lineupid auto
+
+# Use specific lineup (auto-extracts postal automatically)
+tv_grab_gracenote2epg --days 7 --lineupid CAN-OTAJ3B1M4
+
+# Override lineup from command line
+tv_grab_gracenote2epg --days 7 --zip 92101 --lineupid CAN-0005993-X
 
 # Save to custom file
 tv_grab_gracenote2epg --days 7 --zip 92101 --output guide.xml
@@ -298,23 +311,25 @@ See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubl
 
 ### Simple Lineup Configuration
 ```xml
-<setting id="lineupid">auto</setting>  <!-- Simple lineup configuration -->
+<setting id="lineupid">auto</setting>  <!-- Simple lineup configuration (requires valid zipcode) -->
 ```
 
 **Accepted values for `lineupid`:**
-- **`auto`** (default) - Auto-detect Over-the-Air lineup
-- **`CAN-OTAJ3B1M4`** - Copy directly from tvtv.com (auto-normalized to API format)
+- **`auto`** (default) - Auto-detect Over-the-Air lineup **[requires valid zipcode/postal in configuration]**
+- **`CAN-OTAJ3B1M4`** - Copy directly from tvtv.com (auto-normalized to API format + auto-extracts postal)
 - **`CAN-0005993-X`** - Cable/Satellite provider (complete format)
 
 **Examples:**
 ```xml
-<!-- Over-the-Air (antenna) - Default -->
+<!-- Over-the-Air (antenna) - REQUIRES valid zipcode -->
+<setting id="zipcode">92101</setting>
 <setting id="lineupid">auto</setting>
 
-<!-- Copy from tvtv.com: Remove 'lu' prefix from URL -->
+<!-- Copy from tvtv.com: Remove 'lu' prefix from URL (auto-extracts postal J3B1M4) -->
 <setting id="lineupid">CAN-OTAJ3B1M4</setting>
 
 <!-- Cable/Satellite provider (e.g., Videotron) -->
+<setting id="zipcode">J3B1M4</setting>
 <setting id="lineupid">CAN-0005993-X</setting>
 ```
 
@@ -433,6 +448,18 @@ The modular design includes a sophisticated caching system with major performanc
 - **Content Analysis**: Analyzes actual log content instead of file timestamps
 - **Period Detection**: Automatically identifies daily/weekly/monthly boundaries
 
+### Configuration Logging
+
+The configuration summary shows key settings and their sources:
+
+```
+Configuration values processed:
+  zipcode: J3B1M4 (extracted from CAN-OTAJ3B1M4-DEFAULT)
+  lineupid: auto → CAN-OTAJ3B1M4-DEFAULT (auto-detection)
+  country: Canada [CAN] (auto-detected from zipcode)
+  description: Local Over the Air Broadcast (Canada)
+```
+
 ### Performance Statistics Example
 
 ```
@@ -503,6 +530,25 @@ tv_grab_gracenote2epg --norefresh        # Use all cached data (fastest)
 tv_grab_gracenote2epg --zip 92101        # US ZIP code
 tv_grab_gracenote2epg --postal J3B1M4    # Canadian postal code
 tv_grab_gracenote2epg --code 90210       # Generic location code
+```
+
+### Lineup Configuration
+
+```bash
+# IMPORTANT: Auto-detection REQUIRES a valid ZIP/postal code
+tv_grab_gracenote2epg --zip 92101 --lineupid auto                    # Auto-detection with required ZIP
+tv_grab_gracenote2epg --postal J3B1M4 --lineupid auto               # Auto-detection with required postal
+
+# Specific lineup with automatic location extraction
+tv_grab_gracenote2epg --lineupid CAN-OTAJ3B1M4                      # Auto-extracts postal J3B1M4
+tv_grab_gracenote2epg --lineupid USA-OTA90210                       # Auto-extracts ZIP 90210
+
+# Cable/Satellite provider (requires separate location)
+tv_grab_gracenote2epg --postal J3B1M4 --lineupid CAN-0005993-X     # Cable provider + postal
+
+# Consistency validation examples
+tv_grab_gracenote2epg --lineupid CAN-OTAJ3B1M4 --postal J3B1M4      # ✅ Valid (consistent)
+tv_grab_gracenote2epg --lineupid CAN-OTAJ3B1M4 --zip 90210          # ❌ Error: inconsistent
 ```
 
 ### Configuration
@@ -650,9 +696,24 @@ If you need to switch back to your previous grabber:
 
 **Problem**: Confused about lineup configuration
 - **Solution**: Use `--show-lineup` to test: `tv_grab_gracenote2epg --show-lineup --zip 92101`
-- **For OTA**: Just use `<setting id="lineupid">auto</setting>`
+- **For Auto-detection**: Must specify both ZIP/postal and `--lineupid auto`
+- **For OTA**: Use `--lineupid CAN-OTAJ3B1M4` (automatically extracts postal J3B1M4)
 - **For Cable/Satellite**: Copy lineup ID from tvtv.com URL (remove `lu` prefix)
 - **Documentation**: See [LINEUPID.md](LINEUPID.md) for detailed lineup configuration guide
+
+**Problem**: "Missing required zipcode in configuration" error
+- **Cause**: Auto-detection (`lineupid=auto`) requires a valid ZIP/postal code in configuration
+- **Solution**: Either configure zipcode in config file OR use command line: `--zip 92101 --lineupid auto`
+
+**Problem**: "Inconsistent location codes" error
+- **Cause**: Lineup contains different postal/ZIP than explicitly provided
+- **Solution**: Either use lineup alone (`--lineupid CAN-OTAJ3B1M4`) or ensure consistency
+- **Example**: `--lineupid CAN-OTAJ3B1M4 --zip 90210` is invalid (J3B1M4 ≠ 90210)
+- **Note**: All postal codes displayed in normalized format (without spaces) in error messages
+
+**Problem**: Location not extracted from lineup
+- **Cause**: Non-OTA lineup formats don't contain extractable location codes
+- **Solution**: Provide explicit location for Cable/Satellite: `--lineupid CAN-0005993-X --postal J3B1M4`
 
 ### TVheadend Issues
 
@@ -730,7 +791,7 @@ tv_grab_gracenote2epg --debug --console --days 1 --zip 92101
 ```
 
 Debug output includes:
-- Configuration processing details
+- Configuration processing details with device type information
 - Language detection method and statistics
 - Translation system status and loading
 - Cache efficiency metrics
@@ -738,6 +799,7 @@ Debug output includes:
 - TVheadend integration status
 - Extended details processing
 - Log rotation activities
+- Postal code normalization (all codes displayed without spaces)
 
 ## Development
 

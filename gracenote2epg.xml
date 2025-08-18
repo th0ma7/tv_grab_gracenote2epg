@@ -4,10 +4,11 @@
   <setting id="days">2</setting>                               <!-- Guide duration (1-14 days) -->
   <setting id="zipcode">92101</setting>                        <!-- US ZIP or Canadian postal code -->
   <setting id="lineupid">auto</setting>                        <!-- Lineup ID: 'auto', tvtv.com format, or complete format -->
-                                                                <!-- Examples: -->
-                                                                <!--   auto - Auto-detect OTA (default) -->
-                                                                <!--   CAN-OTAJ3B1M4 - Copy from tvtv.com (auto-normalized) -->
-                                                                <!--   CAN-0005993-X - Cable/Satellite provider -->
+                                                               <!-- Requires valid zipcode/postal -->
+                                                                   <!-- Examples: (extracted from tvtv.ca or tvtv.us -->
+                                                                   <!--   auto - Auto-detect OTA (default) -->
+                                                                   <!--   CAN-OTAJ3B1M4 - Over The Air (auto-normalized) -->
+                                                                   <!--   CAN-0005993-X - Cable/Satellite provider -->
 
   <!-- Cache management -->
   <setting id="redays">2</setting>                             <!-- Cache retention days (match days) -->

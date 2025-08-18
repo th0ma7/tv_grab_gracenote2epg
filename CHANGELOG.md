@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4] - Current Release
 ### Added
+- **Simplified Lineup Configuration**: Single `lineupid` setting replaces complex multi-parameter setup
+  - Auto-detection with `lineupid=auto` for Over-the-Air (OTA) channels
+  - Direct copy from tvtv.com URLs (auto-normalized to API format)
+  - Complete provider format support for Cable/Satellite (e.g., `CAN-0005993-X`)
+  - Automatic device type detection (`-` for OTA, `X` for Cable/Satellite)
+  - Backward compatibility with legacy configuration (automatic migration)
+- **Lineup Testing Tool**: New `--show-lineup` command-line option for configuration validation
+  - Test postal/ZIP codes before configuration: `--show-lineup --zip 92101`
+  - Simplified output mode for quick verification
+  - Debug mode with detailed technical information: `--show-lineup --zip 92101 --debug`
+  - Manual validation URLs and step-by-step instructions
+  - Complete API URL generation for manual testing
+- **Enhanced Command-Line Interface**: New `--lineupid` option for direct lineup specification
+  - Override configuration lineup from command line: `--lineupid CAN-OTAJ3B1M4`
+  - Consistent with other command-line options (`--zip`, `--postal`, `--langdetect`)
+  - Supports all lineup formats (auto, tvtv.com format, complete provider format)
+  - **Smart Location Intelligence**: Automatic postal/ZIP extraction from OTA lineups
+    - `--lineupid CAN-OTAJ3B1M4` automatically provides postal code `J3B1M4`
+    - `--lineupid USA-OTA90210` automatically provides ZIP code `90210`
+    - Consistency validation when both lineup and location are explicitly provided
+    - Eliminates need to specify both parameters for OTA configurations
 - **Intelligent Log Rotation**: Multi-period rotation with content analysis for daily/weekly/monthly modes
   - Analyzes actual log content instead of file timestamps for accurate rotation decisions
   - Separates complete periods into individual backup files (e.g., W31, W32, W33)
@@ -23,7 +44,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multiple command interfaces**: gracenote2epg, tv_grab_gracenote2epg, and module execution
 
 ### Changed
-- **Enhanced documentation**: Separated user and developer documentation
+- **Configuration Format**: Updated to version 5 with simplified lineup settings
+  - Single `lineupid` parameter replaces `auto_lineup`, `lineupcode`, `lineup`, and `device`
+  - Automatic migration from legacy configuration formats with backup creation
+  - Cleaner configuration file structure with better organization
+- **Logging Optimization**: Reduced duplication in lineup configuration logging
+  - Single detailed report in configuration summary instead of multiple repetitive messages
+  - Debug-level logging for internal lineup operations to reduce log noise
+  - Simplified final summary with essential information only
+- **Enhanced documentation**: Separated user and developer documentation with comprehensive guides
+  - New LINEUPID.md for detailed lineup configuration instructions
+  - Updated README.md with lineup testing examples and validation procedures
+  - Improved troubleshooting section with specific lineup-related solutions
+
+### Fixed
+- **Configuration Migration**: Robust handling of legacy configuration formats
+  - Automatic detection and migration of deprecated settings
+  - Preserves user customizations while updating to new format
+  - Clear migration logging with backup file creation
+- **Lineup Detection**: Improved reliability of automatic lineup detection
+  - Better error handling for invalid postal/ZIP codes
+  - Enhanced validation of lineup formats from tvtv.com
+  - Fallback mechanisms for edge cases and malformed inputs
 
 ## [1.3] - Previous Release
 ### Added

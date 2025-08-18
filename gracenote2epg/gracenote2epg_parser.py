@@ -48,8 +48,6 @@ class GuideParser:
                          lineup_config['original_config'], lineup_config['lineup_id'],
                          lineup_config['device_type'])
 
-        logging.info('  Country: %s, Postal code: %s',
-                    lineup_config['country'], lineup_config['postal_code'])
         logging.info('  Refresh window: first %d hours will be re-downloaded', refresh_hours)
         logging.info('  Guide duration: %d blocks (%d hours)', day_hours, day_hours * 3)
 

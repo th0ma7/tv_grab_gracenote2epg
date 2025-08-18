@@ -7,6 +7,7 @@ include LICENSE
 include PACKAGING.md
 include CHANGELOG.md
 include LOG_ROTATION.md
+include LINEUPID.md
 include gracenote2epg.xml
 
 # Include package data that might not be auto-detected

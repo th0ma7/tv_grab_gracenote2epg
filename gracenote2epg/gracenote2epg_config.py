@@ -106,9 +106,16 @@ class ConfigManager:
         self.config_file = Path(config_file)
         self.settings: Dict[str, Any] = {}
         self.version: str = "5"  # Updated version for new simplified format
+        self.zipcode_extracted_from_lineupid: bool = False  # Track zipcode extraction for logging
+        self.config_changes: Dict[str, str] = {}  # Track command line changes for clean logging
 
-    def load_config(self, location_code: Optional[str] = None, days: Optional[int] = None,
-                    langdetect: Optional[bool] = None, refresh_hours: Optional[int] = None) -> Dict[str, Any]:
+    def load_config(self, location_code: Optional[str] = None,
+                    location_source: str = 'explicit',
+                    location_extracted_from: Optional[str] = None,
+                    days: Optional[int] = None,
+                    langdetect: Optional[bool] = None,
+                    refresh_hours: Optional[int] = None,
+                    lineupid: Optional[str] = None) -> Dict[str, Any]:
         """Load and validate configuration file"""
 
         # Create default config if doesn't exist
@@ -118,25 +125,60 @@ class ConfigManager:
         # Parse configuration
         self._parse_config_file()
 
+        # Track original values for clearer logging
+        original_zipcode = self.settings.get('zipcode', '').strip()
+        original_lineupid = self.settings.get('lineupid', 'auto').strip()
+
+        # Track changes for logging
+        self.config_changes = {}
+        self.zipcode_extracted_from_lineupid = False
+
         # Override with command line arguments
         if location_code:
+            if not original_zipcode:  # Empty in config
+                if location_source == 'extracted' and location_extracted_from:
+                    self.config_changes['zipcode'] = f'(empty) → {location_code} (extracted from {location_extracted_from})'
+                else:
+                    self.config_changes['zipcode'] = f'(empty) → {location_code} (from command line)'
+            elif original_zipcode != location_code:
+                if location_source == 'extracted' and location_extracted_from:
+                    self.config_changes['zipcode'] = f'{original_zipcode} → {location_code} (extracted from {location_extracted_from})'
+                    # Configuration mismatch detected and resolved
+                    logging.warning('Configuration mismatch detected and resolved:')
+                    logging.warning('  Configured zipcode: %s', original_zipcode)
+                    # Normalize display (remove spaces)
+                    normalized_location = location_code.replace(' ', '')
+                    logging.warning('  LineupID contains: %s (from %s)', normalized_location, location_extracted_from)
+                    logging.warning('  Resolution: Using zipcode from lineupid (%s takes precedence)', location_extracted_from)
+                else:
+                    self.config_changes['zipcode'] = f'{original_zipcode} → {location_code} (overridden)'
             self.settings['zipcode'] = location_code
-            logging.info('Using zipcode from command line: %s', location_code)
 
         if days:
+            original_days = self.settings.get('days', '1')
+            if original_days != str(days):
+                self.config_changes['days'] = f'{original_days} → {days}'
             self.settings['days'] = str(days)
-            logging.info('Using days from command line: %s', days)
 
         if langdetect is not None:
+            original_langdetect = self.settings.get('langdetect', True)
+            if original_langdetect != langdetect:
+                self.config_changes['langdetect'] = f'{original_langdetect} → {langdetect}'
             self.settings['langdetect'] = langdetect
-            logging.info('Using langdetect from command line: %s', langdetect)
 
         if refresh_hours is not None:
+            original_refresh = self.settings.get('refresh', '48')
+            if original_refresh != str(refresh_hours):
+                self.config_changes['refresh'] = f'{original_refresh} → {refresh_hours}'
             self.settings['refresh'] = str(refresh_hours)
-            if refresh_hours == 0:
-                logging.info('Cache refresh disabled from command line (--norefresh)')
-            else:
-                logging.info('Using refresh hours from command line: %s', refresh_hours)
+
+        if lineupid is not None:
+            if original_lineupid != lineupid:
+                self.config_changes['lineupid'] = f'{original_lineupid} → {lineupid}'
+            self.settings['lineupid'] = lineupid
+
+        # Validate configuration consistency before processing
+        self._validate_config_consistency()
 
         # Validate required settings
         self._validate_config()
@@ -145,6 +187,71 @@ class ConfigManager:
         self._set_defaults()
 
         return self.settings
+
+    def _validate_config_consistency(self):
+        """Validate configuration consistency between zipcode and lineupid"""
+        zipcode = self.settings.get('zipcode', '').strip()
+        lineupid = self.settings.get('lineupid', 'auto').strip()
+
+        # If lineupid is not 'auto', check for consistency with zipcode
+        if lineupid.lower() != 'auto':
+            extracted_location = self._extract_location_from_lineupid(lineupid)
+
+            if extracted_location and zipcode:
+                # Both zipcode in config and extractable location from lineupid
+                clean_extracted = extracted_location.replace(' ', '').upper()
+                clean_zipcode = zipcode.replace(' ', '').upper()
+
+                if clean_extracted != clean_zipcode:
+                    logging.error('Configuration mismatch detected:')
+                    logging.error('  Configured zipcode: %s', zipcode)
+                    # Normalize display (remove spaces)
+                    normalized_extracted = extracted_location.replace(' ', '')
+                    logging.error('  LineupID contains: %s (extracted from %s)', normalized_extracted, lineupid)
+                    logging.error('  These must match for consistent operation')
+                    raise ValueError(
+                        f'Configuration mismatch: zipcode "{zipcode}" conflicts with '
+                        f'lineupid "{lineupid}" (contains {normalized_extracted}). '
+                        'Either use auto-detection with zipcode or ensure consistency.'
+                    )
+                else:
+                    logging.debug('Configuration consistency verified: zipcode "%s" matches lineupid "%s"',
+                                zipcode, lineupid)
+
+            elif extracted_location and not zipcode:
+                # Lineupid contains location but no zipcode configured - auto-extract
+                original_zipcode = self.settings.get('zipcode', '').strip()
+                self.settings['zipcode'] = extracted_location.replace(' ', '')
+                self.zipcode_extracted_from_lineupid = True
+                # Normalize display (remove spaces)
+                normalized_extracted = extracted_location.replace(' ', '')
+                self.config_changes['zipcode'] = f'(empty) → {normalized_extracted} (extracted from {lineupid})'
+                # Normalize display (remove spaces)
+                logging.info('Auto-extracted zipcode from lineupid: %s → %s',
+                           lineupid, normalized_extracted)
+
+    def _extract_location_from_lineupid(self, lineupid: str) -> Optional[str]:
+        """Extract postal/ZIP code from lineup ID if it's in OTA format"""
+        # Pattern for OTA lineups: COUNTRY-OTA<LOCATION>[-DEFAULT]
+        ota_pattern = re.compile(r'^(CAN|USA)-OTA([A-Z0-9]+)(?:-DEFAULT)?$', re.IGNORECASE)
+
+        match = ota_pattern.match(lineupid.strip())
+        if match:
+            country = match.group(1).upper()
+            location = match.group(2).upper()
+
+            # Validate extracted location format
+            if country == 'CAN':
+                # Canadian postal: should be A1A1A1 format
+                if re.match(r'^[A-Z][0-9][A-Z][0-9][A-Z][0-9]$', location):
+                    # Format as A1A 1A1 (with space)
+                    return f"{location[:3]} {location[3:]}"
+            elif country == 'USA':
+                # US ZIP: should be 5 digits
+                if re.match(r'^[0-9]{5}$', location):
+                    return location
+
+        return None
 
     def _create_default_config(self):
         """Create default configuration file with proper permissions"""
@@ -274,12 +381,34 @@ class ConfigManager:
         return bool(value)
 
     def _validate_config(self):
-        """Validate required configuration settings"""
+        """Validate required configuration settings with enhanced error messages"""
         # Check required zipcode
-        if not self.settings.get('zipcode'):
+        zipcode = self.settings.get('zipcode', '').strip()
+        if not zipcode:
             logging.error('Zipcode is required but not found in configuration')
             logging.error('Available settings: %s', list(self.settings.keys()))
             raise ValueError('Missing required zipcode in configuration')
+
+        # Enhanced validation for auto-detection lineup
+        lineupid = self.settings.get('lineupid', 'auto').strip().lower()
+        if lineupid == 'auto':
+            # Validate zipcode format for auto-detection
+            clean_code = zipcode.replace(' ', '')
+            is_valid_us = clean_code.isdigit() and len(clean_code) == 5
+            is_valid_ca = bool(re.match(r'^[A-Z][0-9][A-Z][0-9][A-Z][0-9]$', clean_code))
+
+            if not (is_valid_us or is_valid_ca):
+                logging.error('Auto-detection (lineupid=auto) requires a valid ZIP/postal code')
+                logging.error('Current zipcode: "%s"', zipcode)
+                logging.error('Expected formats:')
+                logging.error('  - US ZIP code: 90210')
+                logging.error('  - Canadian postal: J3B1M4 or J3B 1M4')
+                raise ValueError(
+                    f'Invalid zipcode "{zipcode}" for auto-detection. '
+                    'Auto-detection requires valid US ZIP (12345) or Canadian postal (A1A1A1)'
+                )
+
+            logging.debug('Zipcode "%s" validated for auto-detection', zipcode)
 
         # Validate refresh hours
         refresh_setting = self.settings.get('refresh', '48')
@@ -301,7 +430,7 @@ class ConfigManager:
         langdetect_available = self._check_langdetect_available()
 
         defaults = {
-            'lineupid': 'auto',  # SIMPLIFIED: Single lineup setting
+            'lineupid': 'auto',  # Simplified single lineup setting
             'days': '1',
             'redays': '1',
             'refresh': '48',
@@ -441,13 +570,13 @@ class ConfigManager:
 
         # Display results based on mode
         if debug_mode:
-            # Mode debug: affichage simplifiÃ© mais avec infos techniques
+            # Debug mode: detailed technical information
             print("=" * 70)
             print("GRACENOTE2EPG - LINEUP DETECTION (DEBUG MODE)")
             print("=" * 70)
             self._display_debug_output(postal_code, clean_postal, country_name, country, auto_lineup_config)
         else:
-            # Mode normal: affichage simplifiÃ©
+            # Normal mode: simplified output
             self._display_simple_output(auto_lineup_config, country, clean_postal)
 
         return True
@@ -509,6 +638,10 @@ class ConfigManager:
             f"headendId=lineupId"
         )
         print(f"   {test_url}")
+        print()
+
+        print("📖 DOCUMENTATION:")
+        print("   https://github.com/th0ma7/tv_grab_gracenote2epg/blob/main/LINEUPID.md")
 
     def _display_debug_output(self, postal_code: str, clean_postal: str, country_name: str,
                              country: str, lineup_config: Dict):
@@ -567,7 +700,7 @@ class ConfigManager:
         print(f"   • &AffiliateID=lat                 Partner/affiliate identifier (lat=local affiliate)")
         print()
 
-        print(f"💥 MANUAL DOWNLOAD:")
+        print(f"💾 MANUAL DOWNLOAD:")
         print(f"⚠️  NOTE: Using browser-like headers to bypass AWS WAF")
         print()
         print(f"curl -s -H \"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\" \\")
@@ -597,6 +730,10 @@ class ConfigManager:
         print("4. Look for 'Auto-detected lineupID' in the logs")
         print("5. Confirm no HTTP 400 errors in download attempts")
         print("=" * 70)
+        print()
+
+        print("📖 DOCUMENTATION:")
+        print("   https://github.com/th0ma7/tv_grab_gracenote2epg/blob/main/LINEUPID.md")
 
     def normalize_lineup_id(self, lineupid: str, country: str, postal_code: str) -> str:
         """
@@ -677,8 +814,6 @@ class ConfigManager:
         # Determine if this was auto-detected
         auto_detected = not lineupid or lineupid.lower() == "auto"
 
-        # REMOVED: Logging moved to log_config_summary() to avoid duplication
-
         return {
             'lineup_id': normalized_lineup_id,      # Full API format
             'headend_id': 'lineupId',               # Always literal 'lineupId' for API
@@ -749,14 +884,39 @@ class ConfigManager:
             return 48
 
     def log_config_summary(self):
-        """Log configuration summary"""
+        """Log configuration summary with improved clarity"""
         logging.info('Configuration values processed:')
-        logging.info('  zipcode: %s', self.settings.get('zipcode'))
 
-        # Log simplified lineup configuration
+        # Enhanced zipcode logging with cleaner format
+        zipcode = self.settings.get('zipcode')
+        if 'zipcode' in getattr(self, 'config_changes', {}):
+            change_info = self.config_changes['zipcode']
+            logging.info('  zipcode: %s', change_info)
+        else:
+            logging.info('  zipcode: %s', zipcode)
+
+        # Enhanced lineup configuration logging with cleaner format
         lineup_config = self.get_lineup_config()
-        logging.info('  lineupid: %s → %s', lineup_config['original_config'], lineup_config['lineup_id'])
-        logging.info('  device: %s (auto-detected)', lineup_config['device_type'])
+        original_lineupid = lineup_config['original_config']
+        final_lineup_id = lineup_config['lineup_id']
+
+        if 'lineupid' in getattr(self, 'config_changes', {}):
+            change_info = self.config_changes['lineupid']
+            logging.info('  lineupid: %s', change_info)
+        elif lineup_config['auto_detected']:
+            logging.info('  lineupid: %s → %s (auto-detection)', original_lineupid, final_lineup_id)
+        else:
+            # Standard case - just show the transformation
+            logging.info('  lineupid: %s → %s', original_lineupid, final_lineup_id)
+
+        # Country information (moved up and with auto-detected note)
+        country = self.get_country()
+        country_name = 'Canada' if country == 'CAN' else 'United States of America'
+        logging.info('  country: %s [%s] (auto-detected from zipcode)', country_name, country)
+
+        # Move device type to debug level only with explanation
+        logging.debug('  device: %s (auto-detected for optional &device= URL parameter)', lineup_config['device_type'])
+
         logging.info('  description: %s', lineup_config['description'])
 
         logging.info('  xdetails (download extended data): %s', self.settings.get('xdetails'))

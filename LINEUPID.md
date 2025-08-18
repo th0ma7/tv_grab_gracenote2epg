@@ -20,12 +20,12 @@ The `lineupid` setting determines which TV channel lineup gracenote2epg download
 
 ### 1. **Over-the-Air (OTA) - Antenna** 📡
 - **Free channels** received via antenna
-- **Device type**: `-` (automatically detected)
+- **Device type**: `-` (automatically detected, shown in debug mode)
 - **Configuration**: `<setting id="lineupid">auto</setting>`
 
 ### 2. **Cable/Satellite Providers** 📺
 - **Paid TV services** like cable/satellite companies
-- **Device type**: `X` (automatically detected)
+- **Device type**: `X` (automatically detected, shown in debug mode)
 - **Configuration**: Provider-specific lineup ID
 
 ### 3. **Custom Lineup** ⚙️
@@ -40,7 +40,7 @@ The `lineupid` setting determines which TV channel lineup gracenote2epg download
 ```
 - **Best for**: Over-the-Air (antenna) users
 - **Generates**: `USA-OTA90210-DEFAULT` or `CAN-OTAJ3B1M4-DEFAULT`
-- **Device**: Automatically set to `-` (OTA)
+- **Device**: Automatically detected (shown in debug mode: `--debug`)
 
 ### Option 2: Copy from tvtv.com
 ```xml
@@ -58,7 +58,7 @@ The `lineupid` setting determines which TV channel lineup gracenote2epg download
 - **Complete format**: Used as-is for API calls  
 - **Device**: Automatically set to `X` (cable/satellite)
 
-## 🌐 Finding Your LineupID
+## 🌍 Finding Your LineupID
 
 ### Step 1: Visit tvtv.com
 - **Canada**: https://www.tvtv.ca/
@@ -89,9 +89,11 @@ Use the `--show-lineup` command to test your postal/ZIP code and see what lineup
 # Test US ZIP code
 tv_grab_gracenote2epg --show-lineup --zip 90210
 
-# Test Canadian postal code  
+# Test Canadian postal code (displayed as J3B1M4 in logs)
 tv_grab_gracenote2epg --show-lineup --postal J3B1M4
 ```
+
+**Note**: All postal codes are displayed in normalized format (without spaces) in logs and error messages.
 
 ### Detailed Technical Information
 ```bash
@@ -123,11 +125,12 @@ tv_grab_gracenote2epg --show-lineup --zip 90210 --debug
 ### Debug Mode
 Includes additional technical information:
 - Other API parameters and their meanings
+- Device type detection information
 - Manual download commands with proper headers
 - Recommended configuration examples
 - Troubleshooting tips
 
-## 🔍 LineupID Format Reference
+## 📝 LineupID Format Reference
 
 ### Over-the-Air (OTA) Format
 - **tvtv.com format**: `CAN-OTAJ3B1M4` or `USA-OTA90210`
@@ -179,6 +182,12 @@ CAN-0005993-X         → CAN-0005993-X (unchanged)
 2. Ensure you copied the lineup ID correctly from tvtv.com
 3. Remove any extra characters or spaces
 
+### Issue: Inconsistent location codes
+**Error message**: `"Inconsistent location codes: lineupid contains 'J3B1M4' but explicit location is 'J3B2M4'"`
+**Cause**: Postal codes don't match (note: all codes displayed without spaces)
+**Solution**: Ensure consistency between lineup and explicit location
+**Example**: `--lineupid CAN-OTAJ3B1M4 --zip 90210` is invalid (J3B1M4 ≠ 90210)
+
 ## 🔗 Provider Examples
 
 ### Canada
@@ -218,7 +227,7 @@ tv_grab_gracenote2epg --days 1 --zip 90210 --console
 3. Visit the validation URL and compare channels
 4. If channels match, your configuration is correct
 
-## 📝 Configuration Template
+## 📄 Configuration Template
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -236,6 +245,38 @@ tv_grab_gracenote2epg --days 1 --zip 90210 --console
 </settings>
 ```
 
+## 🔍 Configuration Logging and Debug Information
+
+The application provides clear logging to help you understand what's happening:
+
+### Normal Mode Logging
+```
+Configuration values processed:
+  zipcode: J3B1M4 (extracted from CAN-OTAJ3B1M4-DEFAULT)
+  lineupid: auto → CAN-OTAJ3B1M4-DEFAULT (auto-detection)
+  country: Canada [CAN] (auto-detected from zipcode)
+  description: Local Over the Air Broadcast (Canada)
+```
+
+### Debug Mode Logging
+Use `--debug` to see additional technical information:
+```bash
+tv_grab_gracenote2epg --debug --console --days 1 --lineupid CAN-OTAJ3B1M4
+```
+
+Debug mode includes:
+- Device type detection: `device: - (auto-detected for optional &device= URL parameter)`
+- Detailed URL parameter explanations
+- Technical API information
+- Postal code normalization details
+
+### Postal Code Normalization
+All postal codes are displayed consistently without spaces:
+- **Canadian**: `J3B1M4` (not `J3B 1M4`)
+- **US ZIP**: `90210` (unchanged)
+- **Error messages**: Always show normalized format
+- **Log entries**: Consistent formatting throughout
+
 ## 📚 Related Documentation
 
 - **[README.md](README.md)** - Main documentation and installation guide
@@ -250,5 +291,21 @@ If you're still having issues with lineup configuration:
 2. **Check logs**: Look for lineup-related messages in the log files
 3. **Validate**: Visit the tvtv.com URLs shown in `--show-lineup` output
 4. **Debug**: Use `--debug` flag for detailed technical information
+5. **Check normalization**: Ensure postal codes match exactly (no spaces)
+
+### Debug Commands for Troubleshooting
+```bash
+# Basic lineup test
+tv_grab_gracenote2epg --show-lineup --zip 92101
+
+# Detailed debug information
+tv_grab_gracenote2epg --show-lineup --zip 92101 --debug
+
+# Test actual download with console output
+tv_grab_gracenote2epg --days 1 --zip 92101 --debug --console
+
+# Test configuration consistency
+tv_grab_gracenote2epg --lineupid CAN-OTAJ3B1M4 --debug --console
+```
 
 The `--show-lineup` command is your best friend for lineup configuration troubleshooting! 🚀

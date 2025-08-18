@@ -27,7 +27,7 @@ def get_version():
             elif "'" in line:
                 return line.split("'")[1]
 
-    # Pas de fallback - échec strict !
+    # No fallback - strict failure
     raise ValueError(
         f"No __version__ found in {init_file}. "
     )
@@ -82,7 +82,7 @@ setup(
 
     # Additional files - documentation, config, and wrapper scripts
     data_files=[
-        ('share/doc/gracenote2epg', ['README.md', 'LICENSE', 'PACKAGING.md', 'CHANGELOG.md', 'LOG_ROTATION.md']),
+        ('share/doc/gracenote2epg', ['README.md', 'LICENSE', 'PACKAGING.md', 'CHANGELOG.md', 'LOG_ROTATION.md', 'LINEUPID.md']),
         ('share/gracenote2epg', ['gracenote2epg.xml']),
         ('bin', ['tv_grab_gracenote2epg']),  # Only the XMLTV standard wrapper
     ],

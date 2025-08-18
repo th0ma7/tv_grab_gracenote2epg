@@ -129,6 +129,48 @@ def setup_logging(logging_config: dict, log_file: Path, rotation_config: dict):
     return file_handler
 
 
+def log_command_line_processing(args):
+    """Log command line argument processing for better debugging"""
+    logging.info('Command line arguments processed:')
+
+    # Log zipcode processing - only if passed explicitly as argument
+    zipcode_from_extraction = False
+    if hasattr(args, 'location_code') and args.location_code:
+        source = getattr(args, 'location_source', 'unknown')
+        if source == 'explicit':
+            # Only log if passed explicitly by user
+            logging.info('  zipcode: %s (explicit)', args.location_code)
+        elif source == 'extracted':
+            # Track extraction but don't log - it's not a command line argument
+            zipcode_from_extraction = True
+        # Don't log if source is unknown
+
+    # Log lineupid processing
+    if hasattr(args, 'original_lineupid') and args.original_lineupid:
+        if zipcode_from_extraction:
+            # Don't repeat the extraction info since it's already mentioned in zipcode
+            logging.info('  lineupid: %s', args.original_lineupid)
+        else:
+            extracted = getattr(args, 'extracted_location', None)
+            if extracted:
+                # Normalize postal code display (remove spaces)
+                normalized_extracted = extracted.replace(' ', '')
+                logging.info('  lineupid: %s (contains zipcode %s)', args.original_lineupid, normalized_extracted)
+            else:
+                logging.info('  lineupid: %s', args.original_lineupid)
+
+    # Log other parameters
+    if args.days:
+        logging.info('  days: %d', args.days)
+    if hasattr(args, 'refresh_hours') and args.refresh_hours is not None:
+        if args.refresh_hours == 0:
+            logging.info('  refresh: disabled (--norefresh)')
+        else:
+            logging.info('  refresh: %d hours', args.refresh_hours)
+    if args.langdetect is not None:
+        logging.info('  langdetect: %s', args.langdetect)
+
+
 def main():
     """Main application entry point"""
     python_start_time = time.time()
@@ -154,10 +196,13 @@ def main():
         # Load and validate configuration
         config_manager = ConfigManager(config_file)
         config = config_manager.load_config(
-            location_code=args.location_code,
+            location_code=getattr(args, 'location_code', None),
+            location_source=getattr(args, 'location_source', 'explicit'),
+            location_extracted_from=getattr(args, 'original_lineupid', None),
             days=args.days,
             langdetect=args.langdetect,
-            refresh_hours=args.refresh_hours  # NEW: Pass refresh hours
+            refresh_hours=getattr(args, 'refresh_hours', None),
+            lineupid=getattr(args, 'original_lineupid', None)
         )
 
         # Get log rotation configuration
@@ -188,6 +233,9 @@ def main():
         if logging_config['console']:
             logging.info('Console logging enabled - logs also displayed on stderr')
 
+        # Log command line processing BEFORE config summary
+        log_command_line_processing(args)
+
         # Log configuration summary
         logging.info('Configuration loaded from: %s', config_file)
         config_manager.log_config_summary()
@@ -215,7 +263,7 @@ def main():
 
         # Calculate guide parameters
         days = int(config.get('days', 1))
-        offset = float(args.offset or 0)
+        offset = float(getattr(args, 'offset', 0) or 0)
         day_hours = days * 8  # 8 three-hour blocks per day
 
         # Get refresh hours from configuration/command line
@@ -226,11 +274,7 @@ def main():
         now = datetime.now().replace(microsecond=0, second=0, minute=0)
         grid_time_start = int(time.mktime(now.timetuple())) + int(offset * 86400)
 
-        # Log guide parameters
-        country = config_manager.get_country()
-        logging.info('Country: %s [%s]',
-                    'United States of America' if country == 'USA' else 'Canada', country)
-        logging.info('Location code: %s', config.get('zipcode'))
+        # Log guide parameters (remove redundant info already shown in config summary)
         logging.info('TV Guide duration: %s days', days)
 
         if offset > 1:
@@ -240,7 +284,6 @@ def main():
         else:
             logging.info('TV Guide Start: %i', grid_time_start)
 
-        logging.info('Lineup: %s', config.get('lineup'))
         logging.info('Caching directory: %s', defaults['cache_dir'])
 
         # Log cache refresh configuration
@@ -313,15 +356,15 @@ def main():
             # Output XMLTV to stdout ONLY if not redirected to file
             # XMLTV standard: XML goes to stdout, logs go to stderr or file
             if args.output is None:
-                # Pas de --output spÃ©cifiÃ©, afficher le XML sur stdout
+                # No --output specified, display XML on stdout
                 try:
                     with open(xmltv_file, 'r', encoding='utf-8') as f:
-                        print(f.read(), end='')  # end='' pour Ã©viter une ligne vide supplÃ©mentaire
+                        print(f.read(), end='')  # end='' to avoid extra blank line
                 except Exception as e:
                     logging.error('Could not output XMLTV to stdout: %s', str(e))
                     return 1
             else:
-                # --output spÃ©cifiÃ©, le XML est dans le fichier
+                # --output specified, XML is in the file
                 logging.info('XMLTV output written to: %s', args.output)
 
         logging.info('Script completed successfully')
