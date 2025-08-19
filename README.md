@@ -17,9 +17,8 @@ A modular Python implementation for downloading TV guide data from tvlistings.gr
 - **📡 Advanced TVheadend Integration**: Automatic channel filtering and matching
 - **🎯 Extended Program Details**: Optional enhanced descriptions
 - **🛡️ Robust WAF Protection**: Adaptive delays and retry logic with intelligent downloading
-- **📄 Built-in Log Rotation**: Intelligent multi-period log management
+- **📄 Unified Cache & Retention Policies**: Streamlined configuration for all temporary data management
 - **🔧 Platform Agnostic**: Auto-detection for Raspberry Pi, Synology NAS, and standard Linux
-
 
 **IMPORTANT:** Raspberry Pi setup was not tested - requiring testers to confirm functionality or make any necessary changes.
 
@@ -291,16 +290,35 @@ Status terms in enhanced descriptions are also translated:
 - **French**: "CLASSÉ: G | NOUVEAU | CC"
 - **Spanish**: "CLASIFICADO: PG | NUEVO | CC"
 
-## Log Management
+## Unified Cache & Retention Policies
 
-gracenote2epg includes built-in log rotation with intelligent multi-period support:
+gracenote2epg includes a unified cache and retention policy system that manages guide cache, log rotation, and XMLTV backup retention with a simplified, consistent configuration.
 
-- **Smart Content Analysis**: Separates complete periods (days/weeks/months) into individual backup files
-- **tail -f Compatible**: Uses copytruncate strategy to maintain log monitoring compatibility  
-- **Configurable**: Daily, weekly, or monthly rotation with adjustable retention
-- **Visible Actions**: Rotation activities are logged with clear reporting
+### **Key Features**
+- **Unified Configuration**: All cache and retention settings in one section
+- **Intelligent Cleanup**: Automatic management of cache, logs, and backups
+- **Consistent Behavior**: Same configuration patterns for all retention policies
+- **Flexible Retention**: Days, weeks, months, or unlimited options
 
-See **[LOG_ROTATION.md](LOG_ROTATION.md)** for detailed configuration and troubleshooting.
+### **Configuration Settings**
+
+All cache and retention settings are unified:
+
+```xml
+<!-- Cache and retention policies -->
+<setting id="redays">7</setting>                             <!-- Cache retention days (must be >= days) -->
+<setting id="refresh">48</setting>                           <!-- Forced refresh first 48 hours (0=disabled) -->
+<setting id="logrotate">true</setting>                       <!-- Log rotation: true(daily)|false|daily|weekly|monthly -->
+<setting id="relogs">30</setting>                            <!-- Log retention: days(number) or weekly|monthly|quarterly -->
+<setting id="rexmltv">7</setting>                            <!-- XMLTV backup retention: days(number) or weekly|monthly|quarterly -->
+```
+
+### **Retention Values**
+- **Number (days)**: `7`, `30`, `90` - Keep files for specified number of days
+- **Period names**: `weekly`, `monthly`, `quarterly` - Keep files for specified period
+- **Unlimited**: `unlimited` or `0` - Never delete old files
+
+See **[CACHE_RETENTION_POLICIES.md](CACHE_RETENTION_POLICIES.md)** for complete configuration guide and examples.
 
 ## Configuration Options
 
@@ -359,7 +377,7 @@ tv_grab_gracenote2epg --show-lineup --postal J3B1M4
 
 **Example output (simplified mode):**
 ```
-🌐 GRACENOTE API URL PARAMETERS:
+🌍 GRACENOTE API URL PARAMETERS:
    lineupId=CAN-OTAJ3B1M4-DEFAULT
    country=CAN
    postalCode=J3B1M4
@@ -381,8 +399,6 @@ tv_grab_gracenote2epg --show-lineup --postal J3B1M4
 ### Core Settings
 ```xml
 <setting id="days">7</setting>          <!-- Guide duration (1-14 days) -->
-<setting id="redays">7</setting>        <!-- Cache retention days (match days) -->
-<setting id="refresh">48</setting>      <!-- Cache refresh window (hours, 0=disabled) -->
 ```
 
 ### Extended Details with Multi-Language Support
@@ -411,11 +427,13 @@ tv_grab_gracenote2epg --show-lineup --postal J3B1M4
 <setting id="passw"></setting>          <!-- TVH password (optional) -->
 ```
 
-### Log Rotation Settings
+### Cache and Retention Policies
 ```xml
-<setting id="logrotate_enabled">true</setting>     <!-- Enable log rotation -->
-<setting id="logrotate_interval">weekly</setting>  <!-- daily/weekly/monthly -->
-<setting id="logrotate_keep">14</setting>          <!-- Number of backups to keep -->
+<setting id="redays">7</setting>        <!-- Cache retention days (must be >= days) -->
+<setting id="refresh">48</setting>      <!-- Forced refresh first 48 hours (0=disabled) -->
+<setting id="logrotate">true</setting>  <!-- Log rotation: true(daily)|false|daily|weekly|monthly -->
+<setting id="relogs">30</setting>       <!-- Log retention: days(number) or weekly|monthly|quarterly -->
+<setting id="rexmltv">7</setting>       <!-- XMLTV backup retention: days(number) or weekly|monthly|quarterly -->
 ```
 
 ## Performance & Caching
@@ -440,11 +458,11 @@ The modular design includes a sophisticated caching system with major performanc
 
 #### XMLTV Management
 - **Always Backup**: Timestamped backup before each generation
-- **Smart Retention**: Keeps backups for guide duration
+- **Smart Retention**: Keeps backups for configurable retention period
 - **Automatic Cleanup**: Removes old backups beyond retention
 
 #### Log Management
-- **Multi-Period Rotation**: Intelligent separation of complete periods into individual backup files
+- **Unified Rotation**: Intelligent separation of complete periods into individual backup files
 - **Content Analysis**: Analyzes actual log content instead of file timestamps
 - **Period Detection**: Automatically identifies daily/weekly/monthly boundaries
 
@@ -478,12 +496,9 @@ Guide download completed:
   Cache efficiency: 85.7% reused
   Success rate: 100.0%
 
-Log Rotation Report:
-  Recent rotation detected - 2 backup files created:
-    Created backup: gracenote2epg.log.2025-W31 (5.2 MB) - weekly rotation
-    Created backup: gracenote2epg.log.2025-W32 (1.7 MB) - weekly rotation
-    Current log: gracenote2epg.log (0.0 MB) - contains current weekly only
-  Log rotation completed successfully
+Unified cache and retention policy applied:
+  logrotate: weekly (30 days retention)
+  rexmltv: 7 days retention
 
 Language detection statistics (using langdetect library with cache):
   French: 1424 episodes (35.6%)
@@ -737,14 +752,28 @@ If you need to switch back to your previous grabber:
 **Problem**: Extended details downloading too many files
 - **Solution**: Cache efficiency improves significantly after first run (96%+ typical)
 
-### Log Issues
+### Cache and Retention Issues
 
-**Problem**: Log file growing too large
-- **Solution**: Log rotation is enabled by default with weekly rotation and 14-file retention
-- **Check**: Verify `logrotate_enabled=true` in configuration
+**Problem**: Logs not rotating
+- **Solution**: Check unified retention policy configuration:
+```xml
+<setting id="logrotate">true</setting>
+<setting id="relogs">30</setting>
+```
 
-**Problem**: Log rotation not working
-- **Solution**: Check rotation messages in log, see [LOG_ROTATION.md](LOG_ROTATION.md) for troubleshooting
+**Problem**: XMLTV backups not cleaning up
+- **Solution**: Check XMLTV retention configuration:
+```xml
+<setting id="rexmltv">7</setting>
+```
+
+**Problem**: Cache taking too much space
+- **Solution**: Reduce retention periods:
+```xml
+<setting id="redays">2</setting>     <!-- Minimal cache -->
+<setting id="relogs">7</setting>     <!-- 1 week logs -->
+<setting id="rexmltv">3</setting>    <!-- 3 days XMLTV backups -->
+```
 
 For detailed troubleshooting and EPG migration procedures, see the Migration section above.
 
@@ -798,7 +827,7 @@ Debug output includes:
 - Download statistics and timing
 - TVheadend integration status
 - Extended details processing
-- Log rotation activities
+- Unified cache and retention policy activities
 - Postal code normalization (all codes displayed without spaces)
 
 ## Development
@@ -834,7 +863,8 @@ tv_grab_gracenote2epg/
 ├── README.md                                  # This file
 ├── LINEUPID.md                                # Lineup configuration guide
 ├── CHANGELOG.md                               # Version history and release notes
-├── LOG_ROTATION.md                            # Log rotation documentation
+├── CACHE_RETENTION_POLICIES.md                # Unified cache and retention documentation
+├── LOG_ROTATION.md                            # Log rotation technical details
 ├── LICENSE                                    # GPL v3 license
 └── gracenote2epg.xml                          # Config template
 ```
@@ -852,6 +882,18 @@ This project was originally designed to be easily setup in Kodi for use as a gra
 - **th0ma7**: tv_grab_zap2epg improvements based on PR edit4ever/script.module.zap2epg#37
 
 This modular version builds upon the original zap2epg foundation with enhanced architecture, improved error handling, and modern Python development practices while maintaining compatibility with existing configurations and cache formats.
+
+## Documentation
+
+### Core Documentation
+- **[README.md](README.md)** - Main user guide and feature overview
+- **[LINEUPID.md](LINEUPID.md)** - Detailed lineup configuration guide
+- **[CACHE_RETENTION_POLICIES.md](CACHE_RETENTION_POLICIES.md)** - Unified cache and retention system guide
+
+### Technical Documentation  
+- **[LOG_ROTATION.md](LOG_ROTATION.md)** - Technical details for log rotation system
+- **[PACKAGING.md](PACKAGING.md)** - Development and packaging guide
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and release notes
 
 ## Version History
 

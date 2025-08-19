@@ -1,6 +1,6 @@
 # Log Rotation in gracenote2epg
 
-gracenote2epg includes a built-in log rotation system that automatically manages log files without interfering with log monitoring tools like `tail -f`.
+gracenote2epg includes a built-in log rotation system that automatically manages log files without interfering with log monitoring tools like `tail -f`. **Part of the unified cache and retention policy system**.
 
 ## Features
 
@@ -11,31 +11,73 @@ gracenote2epg includes a built-in log rotation system that automatically manages
 - **Automatic cleanup**: Configurable retention of backup files
 - **Visible rotation messages**: Clear reporting of rotation activities in logs
 - **Seamless operation**: Rotation happens transparently during startup
+- **Unified configuration**: Part of the unified cache and retention policy system
 
 ## Configuration
 
-Log rotation is configured in `gracenote2epg.xml`:
+Log rotation is configured as part of the unified cache and retention policy system in `gracenote2epg.xml`:
 
 ```xml
-<!-- Log rotation settings -->
-<setting id="logrotate_enabled">true</setting>     <!-- Enable/disable rotation -->
-<setting id="logrotate_interval">weekly</setting>  <!-- Frequency: daily, weekly, monthly -->
-<setting id="logrotate_keep">14</setting>          <!-- Number of backup files to keep -->
+<!-- Cache and retention policies -->
+<setting id="logrotate">true</setting>                       <!-- Log rotation: true(daily)|false|daily|weekly|monthly -->
+<setting id="relogs">30</setting>                            <!-- Log retention: days(number) or weekly|monthly|quarterly -->
 ```
 
 ### Configuration Options
 
 | Setting | Values | Default | Description |
 |---------|--------|---------|-------------|
-| `logrotate_enabled` | `true`/`false` | `true` | Enable or disable log rotation |
-| `logrotate_interval` | `daily`/`weekly`/`monthly` | `weekly` | How often to rotate logs |
-| `logrotate_keep` | Number (0-365) | `14` | Backup files to keep (0 = unlimited) |
+| `logrotate` | `true`/`false`/`daily`/`weekly`/`monthly` | `true` | Rotation frequency (`true` = daily) |
+| `relogs` | Number or `weekly`/`monthly`/`quarterly`/`unlimited` | `30` | Log retention period |
+
+**Retention Values:**
+- **Number (days)**: `7`, `30`, `90` - Keep files for specified number of days
+- **Period names**: `weekly` (7 days), `monthly` (30 days), `quarterly` (90 days)
+- **Unlimited**: `unlimited` or `0` - Never delete old files
+
+## Configuration Examples
+
+### Standard Home Setup
+```xml
+<!-- Cache and retention policies -->
+<setting id="logrotate">true</setting>    <!-- Daily log rotation -->
+<setting id="relogs">30</setting>         <!-- 30 days log retention -->
+```
+
+**Result**: Logs rotate daily, kept for 30 days
+
+### High-Volume Server
+```xml
+<!-- Cache and retention policies -->
+<setting id="logrotate">daily</setting>   <!-- Explicit daily rotation -->
+<setting id="relogs">quarterly</setting>  <!-- 90 days log retention -->
+```
+
+**Result**: Daily rotation with long retention for debugging
+
+### Low-Volume System
+```xml
+<!-- Cache and retention policies -->
+<setting id="logrotate">weekly</setting>  <!-- Weekly rotation -->
+<setting id="relogs">monthly</setting>    <!-- 30 days retention -->
+```
+
+**Result**: Weekly rotation, monthly retention
+
+### Disable Rotation
+```xml
+<!-- Cache and retention policies -->
+<setting id="logrotate">false</setting>   <!-- No rotation -->
+<setting id="relogs">unlimited</setting>  <!-- Keep all logs -->
+```
+
+**Result**: Single log file grows indefinitely
 
 ## How It Works
 
 ### Multi-Period Rotation
 
-gracenote2epg now uses an intelligent **multi-period rotation system** that:
+gracenote2epg uses an intelligent **multi-period rotation system** that:
 
 1. **Analyzes log content** line by line instead of relying on file timestamps
 2. **Identifies complete periods** (days, weeks, or months) within the log file
@@ -76,7 +118,7 @@ This ensures compatibility with:
 
 ### Startup Rotation Check
 
-**Enhanced**: The rotation system performs intelligent startup analysis:
+The rotation system performs intelligent startup analysis:
 
 - **Analyzes existing log content** by reading actual timestamps
 - **Groups entries by periods** (daily/weekly/monthly boundaries)
@@ -110,53 +152,18 @@ gracenote2epg.log           (0.1 MB, week 33: Aug 17+, current)
 
 ### Backup Cleanup
 
-Old backup files are automatically removed based on the `logrotate_keep` setting:
+Old backup files are automatically removed based on the unified retention configuration:
 
-- **keep=14**: Keeps 14 most recent backup files
-- **keep=0**: Unlimited backups (manual cleanup required)
-- **keep=30**: Keeps 30 most recent backup files
-
-## Usage Examples
-
-### Enable Weekly Rotation (Default)
-```xml
-<setting id="logrotate_enabled">true</setting>
-<setting id="logrotate_interval">weekly</setting>
-<setting id="logrotate_keep">14</setting>
-```
-
-**Result**: Rotates every Monday, keeps 14 weeks of backups (~3.5 months)
-
-### Daily Rotation for High-Volume Logging
-```xml
-<setting id="logrotate_enabled">true</setting>
-<setting id="logrotate_interval">daily</setting>
-<setting id="logrotate_keep">30</setting>
-```
-
-**Result**: Rotates daily at midnight, keeps 30 days of backups
-
-### Monthly Rotation for Low-Volume Systems
-```xml
-<setting id="logrotate_enabled">true</setting>
-<setting id="logrotate_interval">monthly</setting>
-<setting id="logrotate_keep">12</setting>
-```
-
-**Result**: Rotates monthly, keeps 1 year of backups
-
-### Disable Rotation
-```xml
-<setting id="logrotate_enabled">false</setting>
-```
-
-**Result**: Single log file grows indefinitely (requires manual management)
+- **relogs=30**: Keeps logs for 30 days
+- **relogs=weekly**: Keeps logs for 7 days
+- **relogs=quarterly**: Keeps logs for 90 days
+- **relogs=unlimited**: Unlimited backups (manual cleanup required)
 
 ## Monitoring Log Rotation
 
 ### Visible Rotation Messages
 
-Log rotation activities are now clearly reported in the current log:
+Log rotation activities are clearly reported in the current log:
 
 ```bash
 2025/08/17 01:49:08 INFO     Checking for startup log rotation...
@@ -175,8 +182,16 @@ Log rotation activities are now clearly reported in the current log:
 2025/08/17 01:49:14 INFO         Created backup: gracenote2epg.log.2025-W32 (1.7 MB) - weekly rotation
 2025/08/17 01:49:14 INFO         Current log: gracenote2epg.log (0.0 MB) - contains current weekly only
 2025/08/17 01:49:14 INFO       Log rotation completed successfully
-2025/08/17 01:49:14 INFO     ============================================================
-2025/08/17 01:49:14 INFO     gracenote2epg session started - Version 1.4
+```
+
+### Unified Retention Status
+
+The system also reports the overall retention policy:
+
+```bash
+2025/08/17 01:49:14 INFO     Unified cache and retention policy applied:
+2025/08/17 01:49:14 INFO       logrotate: weekly (30 days retention)
+2025/08/17 01:49:14 INFO       rexmltv: 7 days retention
 ```
 
 ### View Current Backup Files
@@ -207,16 +222,16 @@ done
 
 ### Rotation Not Working
 
-**Check if rotation parameters are in your configuration**:
+**Check if unified retention parameters are in your configuration**:
 ```bash
-grep -i logrotate ~/gracenote2epg/conf/gracenote2epg.xml
+grep -E "(logrotate|relogs)" ~/gracenote2epg/conf/gracenote2epg.xml
 ```
 
 If nothing appears, add these parameters to your `gracenote2epg.xml`:
 ```xml
-<setting id="logrotate_enabled">true</setting>
-<setting id="logrotate_interval">weekly</setting>
-<setting id="logrotate_keep">14</setting>
+<!-- Cache and retention policies -->
+<setting id="logrotate">true</setting>
+<setting id="relogs">30</setting>
 ```
 
 **Check for rotation messages**:
@@ -241,7 +256,7 @@ grep -i "error.*rotation" ~/gracenote2epg/log/gracenote2epg.log
 **Problem**: Log file has entries from weeks/months ago but no backup files created.
 
 **Solution**: The enhanced rotation system analyzes content automatically:
-1. **Add rotation parameters** to your configuration (see above)
+1. **Add unified retention parameters** to your configuration (see above)
 2. **Run gracenote2epg once** - it will analyze content and create appropriate backups
 3. **Check rotation messages** in the log for details
 4. **Verify backup files** created with proper date/period names
@@ -269,6 +284,29 @@ gracenote2epg --days 1 --zip 92101 --console --debug 2>&1 | grep -A 20 "Log anal
 # "Current weekly: W33 (will remain in current log)"
 ```
 
+### Configuration Issues
+
+**Problem**: Invalid retention values or validation errors.
+
+**Check retention validation**:
+```bash
+# Look for validation messages
+grep -i "retention.*invalid" ~/gracenote2epg/log/gracenote2epg.log
+
+# Check unified policy status
+grep -A 5 "Unified retention policy:" ~/gracenote2epg/log/gracenote2epg.log
+```
+
+**Fix invalid retention values**:
+```xml
+<!-- Valid retention values -->
+<setting id="relogs">30</setting>        <!-- Number of days -->
+<setting id="relogs">weekly</setting>    <!-- Period name -->
+<setting id="relogs">monthly</setting>   <!-- Period name -->
+<setting id="relogs">quarterly</setting> <!-- Period name -->
+<setting id="relogs">unlimited</setting> <!-- No cleanup -->
+```
+
 ### Disk Space Issues
 
 **Check log directory size**:
@@ -276,9 +314,11 @@ gracenote2epg --days 1 --zip 92101 --console --debug 2>&1 | grep -A 20 "Log anal
 du -sh ~/gracenote2epg/log/
 ```
 
-**Reduce backup count**:
+**Reduce backup retention**:
 ```xml
-<setting id="logrotate_keep">7</setting>  <!-- Keep only 1 week -->
+<!-- Aggressive cleanup -->
+<setting id="logrotate">daily</setting>
+<setting id="relogs">7</setting>         <!-- 1 week only -->
 ```
 
 ### Permission Issues
@@ -297,6 +337,16 @@ chmod 644 ~/gracenote2epg/log/*.log*
 
 ## Advanced Configuration
 
+### Integration with Unified System
+
+The log rotation system is fully integrated with the unified cache and retention policy system. See **[CACHE_RETENTION_POLICIES.md](CACHE_RETENTION_POLICIES.md)** for:
+
+- Complete unified configuration guide
+- Examples for different use cases
+- Performance impact details
+- Best practices
+- Implementation details
+
 ### Custom Rotation Times
 
 The rotation happens at:
@@ -311,7 +361,9 @@ These times are not configurable to maintain simplicity and predictability.
 If you prefer system logrotate, disable built-in rotation:
 
 ```xml
-<setting id="logrotate_enabled">false</setting>
+<!-- Cache and retention policies -->
+<setting id="logrotate">false</setting>
+<setting id="relogs">unlimited</setting>
 ```
 
 Then configure system logrotate:
@@ -328,7 +380,7 @@ Then configure system logrotate:
 }
 ```
 
-**Note**: System logrotate won't have the intelligent multi-period content analysis.
+**Note**: System logrotate won't have the intelligent multi-period content analysis or unified policy integration.
 
 ## Performance Impact
 
@@ -337,6 +389,7 @@ Then configure system logrotate:
 - **Disk I/O**: Efficient (separate backup writes + single main file rebuild)
 - **Memory usage**: Minimal (processes log line by line)
 - **Log monitoring**: No interruption to `tail -f` or monitoring tools
+- **Unified integration**: No additional overhead from unified policy system
 
 The multi-period content analysis adds minimal overhead while providing much more intelligent rotation behavior.
 
@@ -360,6 +413,15 @@ For weekly rotation:
 - **Current week**: Any week containing today's date
 - **Complete weeks**: All weeks that ended before current week started
 
+### Unified Policy Integration
+
+The log rotation system integrates with the unified cache and retention policy system by:
+
+- **Shared configuration**: Uses the same configuration section
+- **Consistent validation**: Same validation rules as other retention policies
+- **Unified reporting**: Combined status reporting with cache and XMLTV retention
+- **Automatic defaults**: Smart defaults based on system usage patterns
+
 ### Error Handling
 
 - **Malformed timestamps**: Assigns to current period or skips
@@ -367,5 +429,12 @@ For weekly rotation:
 - **Permission errors**: Logged but non-fatal
 - **Disk space**: Checks available space before creating backups
 - **Backup conflicts**: Adds numeric suffix if filename exists
+- **Configuration errors**: Falls back to safe defaults with warnings
 
 The system is designed to be robust and fail gracefully while providing clear feedback about any issues.
+
+## See Also
+
+- **[CACHE_RETENTION_POLICIES.md](CACHE_RETENTION_POLICIES.md)** - Complete unified cache and retention policy guide
+- **[README.md](README.md)** - Main user guide with configuration examples
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and retention policy updates

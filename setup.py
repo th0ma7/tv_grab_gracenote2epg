@@ -82,7 +82,15 @@ setup(
 
     # Additional files - documentation, config, and wrapper scripts
     data_files=[
-        ('share/doc/gracenote2epg', ['README.md', 'LICENSE', 'PACKAGING.md', 'CHANGELOG.md', 'LOG_ROTATION.md', 'LINEUPID.md']),
+        ('share/doc/gracenote2epg', [
+            'README.md',
+            'LICENSE',
+            'PACKAGING.md',
+            'CHANGELOG.md',
+            'LOG_ROTATION.md',
+            'LINEUPID.md',
+            'CACHE_RETENTION_POLICIES.md'
+        ]),
         ('share/gracenote2epg', ['gracenote2epg.xml']),
         ('bin', ['tv_grab_gracenote2epg']),  # Only the XMLTV standard wrapper
     ],

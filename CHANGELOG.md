@@ -34,27 +34,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `--lineupid USA-OTA90210` automatically provides ZIP code `90210`
     - Consistency validation when both lineup and location are explicitly provided
     - Eliminates need to specify both parameters for OTA configurations
+- **Unified Cache & Retention Policies**: Streamlined configuration for all temporary data management
+  - Single configuration section for cache, logs, and XMLTV backup retention
+  - Consistent behavior patterns across all retention policies
+  - Flexible retention values: days (numbers), periods (weekly/monthly/quarterly), or unlimited
+  - Smart defaults based on system usage patterns
+  - Unified validation and error handling for all retention settings
 - **Intelligent Log Rotation**: Multi-period rotation with content analysis for daily/weekly/monthly modes
   - Analyzes actual log content instead of file timestamps for accurate rotation decisions
   - Separates complete periods into individual backup files (e.g., W31, W32, W33)
   - Visible rotation messages in logs with clear reporting
   - Compatible with `tail -f` and log monitoring tools using copytruncate strategy
+  - Integrated with unified retention policy system
+- **Enhanced XMLTV Backup Management**: Intelligent backup retention with unified configuration
+  - Configurable retention periods using same syntax as log retention
+  - Automatic cleanup of old XMLTV backups based on retention policy
+  - Support for days, periods, or unlimited retention
+  - Clear reporting of backup creation and cleanup activities
 - **Python wheel compatible**: Now allows generating a python wheel redistributable package
 - **Comprehensive packaging**: Both wheel (.whl) and source (.tar.gz) distributions
 - **Multiple command interfaces**: gracenote2epg, tv_grab_gracenote2epg, and module execution
 
 ### Changed
-- **Configuration Format**: Updated to version 5 with simplified lineup settings
+- **Configuration Format**: Updated to version 5 with simplified lineup settings and unified retention policies
   - Single `lineupid` parameter replaces `auto_lineup`, `lineupcode`, `lineup`, and `device`
+  - Unified cache and retention section replaces scattered retention settings
   - Automatic migration from legacy configuration formats with backup creation
-  - Cleaner configuration file structure with better organization
+  - Cleaner configuration file structure with better organization and grouped sections
 - **Logging Optimization**: Reduced duplication in lineup configuration logging
   - Single detailed report in configuration summary instead of multiple repetitive messages
   - Debug-level logging for internal lineup operations to reduce log noise
   - Simplified final summary with essential information only
+  - Enhanced reporting of unified cache and retention policy status
 - **Enhanced documentation**: Separated user and developer documentation with comprehensive guides
   - New LINEUPID.md for detailed lineup configuration instructions
+  - New CACHE_RETENTION_POLICIES.md for unified cache and retention system documentation
   - Updated README.md with lineup testing examples and validation procedures
+  - Updated LOG_ROTATION.md with unified system integration details
   - Improved troubleshooting section with specific lineup-related solutions
 
 ### Fixed
@@ -66,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Better error handling for invalid postal/ZIP codes
   - Enhanced validation of lineup formats from tvtv.com
   - Fallback mechanisms for edge cases and malformed inputs
+- **Cache Management**: Enhanced cache validation and retention handling
+  - Proper validation of `redays >= days` relationship
+  - Improved error handling for invalid retention values
+  - Better cleanup logic for cache, logs, and XMLTV backups
 
 ## [1.3] - Previous Release
 ### Added

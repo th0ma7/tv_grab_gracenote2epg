@@ -6,7 +6,7 @@ compatibility with 'tail -f' and other log monitoring tools.
 
 ENHANCED VERSION: Multi-period rotation for daily/weekly/monthly modes.
 Analyzes actual log content and separates complete periods into individual backup files.
-FIXED: Rotation messages now visible in logs.
+Updated to use unified retention policies configuration.
 """
 
 import logging
@@ -29,7 +29,7 @@ class CopyTruncateTimedRotatingFileHandler(logging.handlers.BaseRotatingHandler)
     at startup if needed.
 
     ENHANCED VERSION: Multi-period rotation for daily/weekly/monthly modes.
-    FIXED: Rotation is now triggered explicitly after logging setup.
+    Updated to use unified retention policies.
     """
 
     def __init__(self, filename: str, when: str = 'midnight', interval: int = 1,
@@ -68,10 +68,6 @@ class CopyTruncateTimedRotatingFileHandler(logging.handlers.BaseRotatingHandler)
 
         # Calculate next rotation time
         self.rollover_at = self._compute_next_rollover()
-
-        # FIXED: Don't perform rotation during init - will be triggered explicitly
-        # Original call was here: self._check_startup_rotation()
-        # Now rotation is triggered by check_rotation_status() after logging setup
 
         logging.debug('Log rotation initialized: %s every %s, keeping %d backups',
                      filename, self.period_name, self.backup_count)
@@ -319,10 +315,11 @@ class CopyTruncateTimedRotatingFileHandler(logging.handlers.BaseRotatingHandler)
                     start_date = period_data['start_date'].strftime('%Y-%m-%d')
                     end_date = period_data['end_date'].strftime('%Y-%m-%d')
                     line_count = len(period_data['lines'])
+                    file_size_mb = Path(backup_filename).stat().st_size / (1024*1024)
 
-                    logging.info('Created %s backup: %s (%s to %s, %d lines)',
+                    logging.info('Created %s backup: %s (%.1f MB, %s to %s, %d lines)',
                                self.period_name, Path(backup_filename).name,
-                               start_date, end_date, line_count)
+                               file_size_mb, start_date, end_date, line_count)
 
                 except Exception as e:
                     logging.error('Failed to create backup %s: %s', backup_filename, str(e))
@@ -456,29 +453,29 @@ class CopyTruncateTimedRotatingFileHandler(logging.handlers.BaseRotatingHandler)
 
 
 class LogRotationManager:
-    """Manages log rotation configuration and setup."""
+    """Manages log rotation configuration and setup with unified retention policies."""
 
     @staticmethod
-    def create_rotating_handler(log_file: Path, rotation_config: dict) -> logging.Handler:
+    def create_rotating_handler(log_file: Path, retention_config: dict) -> logging.Handler:
         """
-        Create appropriate log handler based on configuration.
+        Create appropriate log handler based on unified retention configuration.
 
         Args:
             log_file: Path to log file
-            rotation_config: Rotation configuration from config file
+            retention_config: Unified retention configuration from config manager
 
         Returns:
             Configured logging handler
         """
-        if not rotation_config.get('enabled', False):
+        if not retention_config.get('enabled', False):
             # Standard file handler without rotation
             handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
             logging.debug('Log rotation disabled - using standard FileHandler')
             return handler
 
-        # Extract rotation parameters
-        when = rotation_config.get('interval', 'daily').lower()
-        backup_count = rotation_config.get('keep_files', 7)
+        # Extract rotation parameters from unified config
+        when = retention_config.get('interval', 'daily').lower()
+        backup_count = retention_config.get('keep_files', 7)
 
         # Map configuration values to handler parameters
         when_mapping = {
@@ -498,8 +495,20 @@ class LogRotationManager:
             encoding='utf-8'
         )
 
-        logging.info('Log rotation enabled: %s rotation, keeping %d backup files',
-                    when, backup_count)
+        # Log details about the unified cache and retention policy
+        log_retention_days = retention_config.get('log_retention_days', 30)
+        if log_retention_days == 0:
+            retention_desc = 'unlimited'
+        else:
+            retention_desc = f'{log_retention_days} days'
+
+        logging.info('Log rotation enabled: %s rotation, %s retention (%d backup files)',
+                    when, retention_desc, backup_count)
+
+        # Log settings used for transparency
+        logging.debug('Cache and retention policy settings:')
+        logging.debug('  logrotate: %s', retention_config.get('logrotate_setting', 'true'))
+        logging.debug('  relogs: %s', retention_config.get('relogs_setting', '30'))
 
         return handler
 
@@ -525,27 +534,33 @@ class LogRotationManager:
         return False
 
     @staticmethod
-    def get_rotation_status(log_file: Path, rotation_config: dict) -> dict:
+    def get_rotation_status(log_file: Path, retention_config: dict) -> dict:
         """
-        Get current rotation status information.
+        Get current rotation status information with unified cache and retention details.
 
         Args:
             log_file: Path to log file
-            rotation_config: Rotation configuration
+            retention_config: Unified cache and retention configuration
 
         Returns:
             Dictionary with rotation status information
         """
-        if not rotation_config.get('enabled', False):
+        if not retention_config.get('enabled', False):
             return {'enabled': False}
 
         status = {
             'enabled': True,
-            'interval': rotation_config.get('interval', 'daily'),
-            'keep_files': rotation_config.get('keep_files', 7),
+            'interval': retention_config.get('interval', 'daily'),
+            'keep_files': retention_config.get('keep_files', 7),
+            'log_retention_days': retention_config.get('log_retention_days', 30),
+            'xmltv_retention_days': retention_config.get('xmltv_retention_days', 7),
             'current_log_size': 0,
             'backup_files_count': 0,
-            'week_start_day': 'Sunday'  # Document that we use Sunday as week start
+            'week_start_day': 'Sunday',  # Document that we use Sunday as week start
+            # Include original settings for reference
+            'logrotate_setting': retention_config.get('logrotate_setting', 'true'),
+            'relogs_setting': retention_config.get('relogs_setting', '30'),
+            'rexmltv_setting': retention_config.get('rexmltv_setting', '7'),
         }
 
         # Get current log file size

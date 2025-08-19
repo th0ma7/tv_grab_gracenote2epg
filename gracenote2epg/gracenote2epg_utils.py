@@ -2,7 +2,7 @@
 gracenote2epg.gracenote2epg_utils - Utilities and cache management
 
 Provides cache management, time utilities, and general helper functions
-for the gracenote2epg system.
+for the gracenote2epg system. Updated with unified retention policies for XMLTV backups.
 """
 
 import gzip
@@ -60,7 +60,7 @@ class TimeUtils:
 
 
 class CacheManager:
-    """Manages all caching operations for gracenote2epg"""
+    """Manages all caching operations for gracenote2epg with unified retention policies"""
 
     def __init__(self, cache_dir: Path):
         self.cache_dir = Path(cache_dir)
@@ -88,8 +88,8 @@ class CacheManager:
             logging.warning('Error backing up XMLTV: %s', str(e))
             return None
 
-    def clean_old_xmltv_backups(self, xmltv_file: Path, guide_days: int):
-        """XMLTV: Remove backups older than guide duration"""
+    def clean_old_xmltv_backups(self, xmltv_file: Path, retention_days: int):
+        """XMLTV: Remove backups older than retention period using unified retention policy"""
         try:
             xmltv_dir = xmltv_file.parent
             xmltv_basename = xmltv_file.stem  # filename without .xml
@@ -97,24 +97,39 @@ class CacheManager:
             if not xmltv_dir.exists():
                 return
 
-            # Keep backups for guide duration
-            cutoff_time = time.time() - (guide_days * 24 * 3600)
+            # Handle unlimited retention
+            if retention_days == 0:
+                logging.debug('XMLTV backup retention: unlimited - no cleanup performed')
+                return
+
+            # Keep backups for retention period
+            cutoff_time = time.time() - (retention_days * 24 * 3600)
 
             cleaned_count = 0
+            kept_count = 0
             pattern = f"{xmltv_basename}.xml.*"
 
             for backup_file in xmltv_dir.glob(pattern):
                 try:
-                    if backup_file.stat().st_mtime < cutoff_time:
+                    file_mtime = backup_file.stat().st_mtime
+                    if file_mtime < cutoff_time:
                         backup_file.unlink()
                         logging.debug('Deleted old XMLTV backup: %s', backup_file.name)
                         cleaned_count += 1
+                    else:
+                        kept_count += 1
+                        logging.debug('Kept XMLTV backup: %s', backup_file.name)
                 except OSError as e:
                     logging.warning('Error deleting backup %s: %s', backup_file.name, str(e))
 
-            if cleaned_count > 0:
-                logging.info('XMLTV cleanup: %d old backups removed (retention: %d days)',
-                           cleaned_count, guide_days)
+            if cleaned_count > 0 or kept_count > 0:
+                if retention_days == 1:
+                    retention_desc = '1 day'
+                else:
+                    retention_desc = f'{retention_days} days'
+
+                logging.info('XMLTV backup cleanup: %d removed, %d kept (retention: %s)',
+                           cleaned_count, kept_count, retention_desc)
 
         except Exception as e:
             logging.warning('Error cleaning XMLTV backups: %s', str(e))
@@ -337,15 +352,16 @@ class CacheManager:
             logging.debug('Using cached: %s', block_display)
             return True
 
-    def perform_initial_cleanup(self, grid_time_start: float, guide_days: int, xmltv_file: Path):
-        """Perform initial cache cleanup (guide blocks and XMLTV backups only)"""
+    def perform_initial_cleanup(self, grid_time_start: float, guide_days: int, xmltv_file: Path,
+                              xmltv_retention_days: int):
+        """Perform initial cache cleanup with unified retention policy"""
         logging.info('=== Initial Cache Cleanup ===')
 
         # 1. Clean guide cache - keep only blocks for target period
         self.clean_guide_cache(grid_time_start, guide_days)
 
-        # 2. Clean XMLTV backups - keep only for guide duration
-        self.clean_old_xmltv_backups(xmltv_file, guide_days)
+        # 2. Clean XMLTV backups using unified retention policy
+        self.clean_old_xmltv_backups(xmltv_file, xmltv_retention_days)
 
         logging.info('Initial cache cleanup completed (show cache will be cleaned after parsing episodes)')
 

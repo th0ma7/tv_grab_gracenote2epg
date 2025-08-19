@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <settings version="5">
   <!-- Basic guide settings -->
-  <setting id="days">2</setting>                               <!-- Guide duration (1-14 days) -->
+  <setting id="days">7</setting>                               <!-- Guide duration (1-14 days) -->
   <setting id="zipcode">92101</setting>                        <!-- US ZIP or Canadian postal code -->
   <setting id="lineupid">auto</setting>                        <!-- Lineup ID: 'auto', tvtv.com format, or complete format -->
                                                                <!-- Requires valid zipcode/postal -->
-                                                                   <!-- Examples: (extracted from tvtv.ca or tvtv.us -->
+                                                                   <!-- Examples: (extracted from tvtv.ca or tvtv.us) -->
                                                                    <!--   auto - Auto-detect OTA (default) -->
                                                                    <!--   CAN-OTAJ3B1M4 - Over The Air (auto-normalized) -->
                                                                    <!--   CAN-0005993-X - Cable/Satellite provider -->
-
-  <!-- Cache management -->
-  <setting id="redays">2</setting>                             <!-- Cache retention days (match days) -->
-  <setting id="refresh">48</setting>                           <!-- Forced refresh first 48 hours (0=disabled) -->
 
   <!-- Station filtering -->
   <setting id="slist"></setting>                               <!-- Comma-separated station IDs (empty=all) -->
@@ -21,7 +17,7 @@
   <!-- Extended details and language detection -->
   <setting id="xdetails">true</setting>                        <!-- Download series details + enhanced metadata -->
   <setting id="xdesc">true</setting>                           <!-- Enhanced descriptions with translations -->
-  <setting id="langdetect">true</setting>                      <!-- Auto-detect French/English/Spanish -->
+  <setting id="langdetect">true</setting>                      <!-- Enable automatic language detection -->
 
   <!-- Display options -->
   <setting id="epgenre">3</setting>                            <!-- Genre mode: 0=none, 1=primary, 2=EIT, 3=all -->
@@ -36,8 +32,10 @@
   <setting id="usern"></setting>                               <!-- TVH username (optional) -->
   <setting id="passw"></setting>                               <!-- TVH password (optional) -->
 
-  <!-- Log rotation settings -->
-  <setting id="logrotate_enabled">true</setting>               <!-- Enable automatic log rotation -->
-  <setting id="logrotate_interval">weekly</setting>            <!-- Rotation frequency: daily, weekly, monthly -->
-  <setting id="logrotate_keep">14</setting>                    <!-- Number of backup files to keep (0=unlimited) -->
+  <!-- Cache and retention policies -->
+  <setting id="redays">7</setting>                             <!-- Cache retention days (must be >= days) -->
+  <setting id="refresh">48</setting>                           <!-- Forced refresh first 48 hours (0=disabled) -->
+  <setting id="logrotate">true</setting>                       <!-- Log rotation: true(daily)|false|daily|weekly|monthly -->
+  <setting id="relogs">30</setting>                            <!-- Log retention: days(number) or weekly|monthly|quarterly -->
+  <setting id="rexmltv">7</setting>                            <!-- XMLTV backup retention: days(number) or weekly|monthly|quarterly -->
 </settings>

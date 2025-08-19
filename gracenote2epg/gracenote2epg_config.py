@@ -4,6 +4,7 @@ gracenote2epg.gracenote2epg_config - Configuration management
 Handles XML configuration file parsing, validation, automatic cleanup,
 and migration from older versions. Now includes simplified lineupid configuration
 that automatically normalizes tvtv.com formats and detects device type.
+Updated with unified retention policies for logs and XMLTV backups.
 """
 
 import logging
@@ -18,21 +19,28 @@ from typing import Dict, List, Optional, Any, Set, Tuple
 class ConfigManager:
     """Manages gracenote2epg configuration file"""
 
-    # Default configuration template
+    # Default configuration template with unified cache and retention policies
     DEFAULT_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
 <settings version="5">
+  <!-- Basic guide settings -->
   <setting id="zipcode">92101</setting>
   <setting id="lineupid">auto</setting>
   <setting id="days">7</setting>
-  <setting id="redays">7</setting>
-  <setting id="refresh">48</setting>
+
+  <!-- Station filtering -->
   <setting id="slist"></setting>
   <setting id="stitle">false</setting>
+
+  <!-- Extended details and language detection -->
   <setting id="xdetails">true</setting>
   <setting id="xdesc">true</setting>
   <setting id="langdetect">true</setting>
+
+  <!-- Display options -->
   <setting id="epgenre">3</setting>
   <setting id="epicon">1</setting>
+
+  <!-- TVheadend integration -->
   <setting id="tvhoff">true</setting>
   <setting id="usern"></setting>
   <setting id="passw"></setting>
@@ -40,9 +48,13 @@ class ConfigManager:
   <setting id="tvhport">9981</setting>
   <setting id="tvhmatch">true</setting>
   <setting id="chmatch">true</setting>
-  <setting id="logrotate_enabled">true</setting>
-  <setting id="logrotate_interval">weekly</setting>
-  <setting id="logrotate_keep">14</setting>
+
+  <!-- Cache and retention policies -->
+  <setting id="redays">7</setting>
+  <setting id="refresh">48</setting>
+  <setting id="logrotate">true</setting>
+  <setting id="relogs">30</setting>
+  <setting id="rexmltv">7</setting>
 </settings>"""
 
     # Valid settings and their types
@@ -55,8 +67,6 @@ class ConfigManager:
 
         # Basic settings
         'days': str,
-        'redays': str,
-        'refresh': str,
 
         # Station filtering
         'slist': str,
@@ -80,34 +90,46 @@ class ConfigManager:
         'tvhmatch': bool,
         'chmatch': bool,
 
-        # Log rotation settings
-        'logrotate_enabled': bool,
-        'logrotate_interval': str,
-        'logrotate_keep': str,
+        # Cache and retention policies
+        'redays': str,
+        'refresh': str,
+        'logrotate': str,
+        'relogs': str,
+        'rexmltv': str,
     }
 
-    # DEPRECATED settings for migration
+    # DEPRECATED settings for simplified removal (no migration)
     DEPRECATED_SETTINGS = {
         'auto_lineup': 'lineupid',
         'lineupcode': 'lineupid',
         'lineup': 'lineupid',
-        'device': 'lineupid'  # Auto-detected now
+        'device': 'lineupid',  # Auto-detected now
+        # Old log rotation settings
+        'logrotate_enabled': 'logrotate',
+        'logrotate_interval': 'logrotate',
+        'logrotate_keep': 'relogs',
+        # Intermediate version settings
+        'log_rotation': 'logrotate',
+        'log_retention': 'relogs',
+        'xmltv_backup_retention': 'rexmltv',
     }
 
     # Settings order for clean output
     SETTINGS_ORDER = [
-        'zipcode', 'lineupid', 'days', 'redays', 'refresh',
+        'zipcode', 'lineupid', 'days',
         'slist', 'stitle', 'xdetails', 'xdesc', 'langdetect', 'epgenre', 'epicon',
         'tvhoff', 'usern', 'passw', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch',
-        'logrotate_enabled', 'logrotate_interval', 'logrotate_keep'
+        'redays', 'refresh', 'logrotate', 'relogs', 'rexmltv'
     ]
 
     def __init__(self, config_file: Path):
         self.config_file = Path(config_file)
         self.settings: Dict[str, Any] = {}
-        self.version: str = "5"  # Updated version for new simplified format
+        self.version: str = "5"  # Updated version for new unified format
         self.zipcode_extracted_from_lineupid: bool = False  # Track zipcode extraction for logging
         self.config_changes: Dict[str, str] = {}  # Track command line changes for clean logging
+        self._backup_file_created: Optional[str] = None  # Track backup file creation
+        self._original_file_settings: Dict[str, Any] = {}  # Store original config file values
 
     def load_config(self, location_code: Optional[str] = None,
                     location_source: str = 'explicit',
@@ -118,12 +140,18 @@ class ConfigManager:
                     lineupid: Optional[str] = None) -> Dict[str, Any]:
         """Load and validate configuration file"""
 
+        # Initialize backup tracking
+        self._backup_file_created = None
+
         # Create default config if doesn't exist
         if not self.config_file.exists():
             self._create_default_config()
 
         # Parse configuration
         self._parse_config_file()
+
+        # Store original values from config file before any command line modifications
+        self._original_file_settings = self.settings.copy()
 
         # Track original values for clearer logging
         original_zipcode = self.settings.get('zipcode', '').strip()
@@ -133,7 +161,7 @@ class ConfigManager:
         self.config_changes = {}
         self.zipcode_extracted_from_lineupid = False
 
-        # Override with command line arguments
+        # Override with command line arguments (TEMPORARY for this execution only)
         if location_code:
             if not original_zipcode:  # Empty in config
                 if location_source == 'extracted' and location_extracted_from:
@@ -183,7 +211,8 @@ class ConfigManager:
         # Validate required settings
         self._validate_config()
 
-        # Set defaults for missing settings
+        # Set defaults for missing settings (this will update config file if needed)
+        # This uses the ORIGINAL file values, not the command line modified ones
         self._set_defaults()
 
         return self.settings
@@ -269,25 +298,29 @@ class ConfigManager:
             f.write(self.DEFAULT_CONFIG)
 
     def _parse_config_file(self):
-        """Parse XML configuration file with automatic migration"""
+        """Parse XML configuration file with simplified cleanup and automatic ordering"""
         try:
             tree = ET.parse(self.config_file)
             root = tree.getroot()
 
             logging.info('Reading configuration from: %s', self.config_file)
 
-            # Get version - default to version 5 for new simplified format
+            # Get version - default to version 5 for new unified format
             self.version = root.attrib.get('version', '5')
             logging.info('Configuration version: %s', self.version)
 
-            # Parse settings
-            settings_dict = {}
+            # Parse settings with simplified validation
             valid_settings = {}
             deprecated_settings = []
+            unknown_settings = []
             migration_needed = False
+
+            # Track original order for comparison
+            original_order = []
 
             for setting in root.findall('setting'):
                 setting_id = setting.get('id')
+                original_order.append(setting_id)
 
                 # Get value based on version
                 if self.version == '2':
@@ -300,31 +333,53 @@ class ConfigManager:
                     if setting_value == '':
                         setting_value = None
 
-                settings_dict[setting_id] = setting_value
                 logging.debug('Config setting: %s = %s', setting_id, setting_value)
 
-                # Track valid vs deprecated settings
+                # Categorize settings - SIMPLIFIED
                 if setting_id in self.VALID_SETTINGS:
+                    # Valid setting - keep as-is
                     valid_settings[setting_id] = setting_value
+
                 elif setting_id in self.DEPRECATED_SETTINGS:
-                    deprecated_settings.append(f'{setting_id} (migrated to {self.DEPRECATED_SETTINGS[setting_id]})')
+                    # Deprecated setting - mark for removal (no migration)
+                    deprecated_settings.append(setting_id)
                     migration_needed = True
-                    # Handle migration
-                    self._handle_deprecated_setting(setting_id, setting_value, valid_settings)
+                    logging.debug('Deprecated setting found: %s (will be removed)', setting_id)
+
                 elif setting_id.startswith('desc') and re.match(r'desc[0-9]{2}', setting_id):
-                    deprecated_settings.append(f'{setting_id} (deprecated custom formatting)')
+                    # Old description formatting - mark for removal
+                    deprecated_settings.append(setting_id)
+                    migration_needed = True
+
                 elif setting_id == 'useragent':
-                    deprecated_settings.append(f'{setting_id} (deprecated)')
+                    # Old useragent setting - mark for removal
+                    deprecated_settings.append(setting_id)
+                    migration_needed = True
+
                 else:
-                    deprecated_settings.append(f'{setting_id} (unknown)')
-                    logging.warning('Unknown configuration setting: %s = %s', setting_id, setting_value)
+                    # Unknown setting - mark for removal
+                    unknown_settings.append(setting_id)
+                    migration_needed = True
+                    logging.warning('Unknown configuration setting: %s = %s (will be removed)',
+                                  setting_id, setting_value)
 
-            # Clean and migrate configuration if needed
-            if deprecated_settings or migration_needed:
-                self._clean_and_migrate_config(valid_settings, deprecated_settings)
-
-            # Process settings with type conversion
+            # Store valid settings in self.settings FIRST
             self._process_settings(valid_settings)
+
+            # Check if ordering needs to be corrected
+            ordering_needed = self._check_ordering_needed(original_order, valid_settings)
+
+            # Clean/reorder configuration if needed, but preserve existing values
+            if migration_needed or ordering_needed:
+                all_removed = deprecated_settings + unknown_settings
+                reason = []
+                if all_removed:
+                    reason.append(f"removed {len(all_removed)} deprecated/unknown settings")
+                if ordering_needed:
+                    reason.append("reordered settings for consistency")
+
+                logging.info('Configuration update needed: %s', ', '.join(reason))
+                self._clean_and_migrate_config(valid_settings, all_removed, ordering_needed)
 
         except ET.ParseError as e:
             logging.error('Cannot parse configuration file %s: %s', self.config_file, e)
@@ -333,26 +388,29 @@ class ConfigManager:
             logging.error('Error reading configuration file %s: %s', self.config_file, e)
             raise
 
-    def _handle_deprecated_setting(self, setting_id: str, setting_value: str, valid_settings: Dict[str, str]):
-        """Handle migration of deprecated settings to new lineupid format"""
-        if setting_id == 'auto_lineup':
-            # If auto_lineup was false, we need to check for manual lineupcode
-            if not self._parse_boolean(setting_value):
-                # Will be handled when we process lineupcode
-                pass
-        elif setting_id == 'lineupcode':
-            # Convert old lineupcode to new lineupid format
-            if setting_value and setting_value != 'lineupId':
-                # This was a manual lineup code
-                valid_settings['lineupid'] = setting_value
-                logging.info('Migrated lineupcode "%s" to lineupid', setting_value)
-            else:
-                # Default fallback to auto
-                if 'lineupid' not in valid_settings:
-                    valid_settings['lineupid'] = 'auto'
-        elif setting_id in ['lineup', 'device']:
-            # These are now auto-generated, no migration needed
-            logging.debug('Deprecated setting %s will be auto-generated', setting_id)
+    def _check_ordering_needed(self, original_order: List[str], valid_settings: Dict[str, str]) -> bool:
+        """Check if configuration settings need to be reordered"""
+        # Filter original order to only include valid settings
+        current_valid_order = [setting_id for setting_id in original_order
+                              if setting_id in valid_settings]
+
+        # Get expected order for valid settings
+        expected_order = [setting_id for setting_id in self.SETTINGS_ORDER
+                         if setting_id in valid_settings]
+
+        # Add any valid settings not in SETTINGS_ORDER (alphabetically)
+        remaining_settings = sorted([setting_id for setting_id in valid_settings
+                                   if setting_id not in self.SETTINGS_ORDER])
+        expected_order.extend(remaining_settings)
+
+        # Compare orders
+        if current_valid_order != expected_order:
+            logging.debug('Settings order differs from recommended:')
+            logging.debug('  Current:  %s', current_valid_order)
+            logging.debug('  Expected: %s', expected_order)
+            return True
+
+        return False
 
     def _process_settings(self, settings_dict: Dict[str, str]):
         """Process and type-convert settings"""
@@ -421,19 +479,17 @@ class ConfigManager:
             logging.warning('Invalid refresh setting "%s", using default 48', refresh_setting)
             self.settings['refresh'] = '48'
 
-        # Validate log rotation settings
-        self._validate_logrotate_settings()
+        # Validate cache and retention policies
+        self._validate_cache_and_retention_policies()
 
     def _set_defaults(self):
-        """Set default values for missing settings"""
+        """Set default values for missing settings and update config file if needed"""
         # Check if langdetect is available for smart default
         langdetect_available = self._check_langdetect_available()
 
         defaults = {
             'lineupid': 'auto',  # Simplified single lineup setting
             'days': '1',
-            'redays': '1',
-            'refresh': '48',
             'slist': '',
             'stitle': False,
             'xdetails': True,
@@ -448,15 +504,95 @@ class ConfigManager:
             'tvhport': '9981',
             'tvhmatch': True,
             'chmatch': True,
-            'logrotate_enabled': True,
-            'logrotate_interval': 'weekly',
-            'logrotate_keep': '14',
+            # Cache and retention policies - CORRECTED DEFAULTS
+            'redays': '1',     # Will be validated to be >= days
+            'refresh': '48',
+            'logrotate': 'true',  # true = daily by default
+            'relogs': '30',       # 30 days by default (NOT 98!)
+            'rexmltv': '7',       # 7 days by default
         }
 
+        # Check what's missing from the ORIGINAL config file (not current self.settings)
+        original_settings = getattr(self, '_original_file_settings', self.settings)
+
+        added_defaults = []
+        settings_to_add = {}
+
         for key, default_value in defaults.items():
-            if key not in self.settings or self.settings[key] is None:
-                self.settings[key] = default_value
+            # Check if missing from ORIGINAL file settings
+            if key not in original_settings or original_settings[key] is None:
+                # Add to current settings for this execution
+                if key not in self.settings:
+                    self.settings[key] = default_value
+
+                # Track for file update
+                settings_to_add[key] = default_value
+                added_defaults.append(f'{key}={default_value}')
                 logging.debug('Set default: %s = %s', key, default_value)
+
+        # If we added defaults, update the configuration file AND notify user
+        if added_defaults:
+            logging.info('Added missing settings with defaults: %s', ', '.join(added_defaults))
+
+            # Update the configuration file to include ONLY the new defaults
+            self._update_config_with_missing_defaults(settings_to_add)
+
+            # User notification about the upgrade
+            self._notify_config_upgrade(added_defaults)
+
+    def _update_config_with_missing_defaults(self, new_settings: Dict[str, Any]):
+        """Update the configuration file to include ONLY newly added default settings"""
+        try:
+            # Re-read the original config file to get the unmodified values
+            tree = ET.parse(self.config_file)
+            root = tree.getroot()
+
+            # Get existing settings to preserve their ORIGINAL values (not from self.settings)
+            existing_settings = {}
+            for setting in root.findall('setting'):
+                setting_id = setting.get('id')
+
+                # Get value based on version (same logic as in _parse_config_file)
+                if self.version == '2':
+                    setting_value = setting.text
+                else:
+                    setting_value = setting.get('value')
+                    if setting_value is None:
+                        setting_value = setting.text
+                    if setting_value == '':
+                        setting_value = None
+
+                # Only include valid settings that we want to preserve
+                if setting_id in self.VALID_SETTINGS:
+                    existing_settings[setting_id] = setting_value
+
+            # Add only the truly new settings (those not in original file)
+            for key, value in new_settings.items():
+                if key not in existing_settings:
+                    existing_settings[key] = str(value) if not isinstance(value, bool) else ('true' if value else 'false')
+                    logging.debug('Adding new setting to config file: %s = %s', key, existing_settings[key])
+
+            # Write the complete configuration with preserved original values
+            self._write_clean_config(existing_settings)
+
+            logging.info('Configuration file updated: preserved %d existing settings, added %d new settings',
+                        len(existing_settings) - len(new_settings), len(new_settings))
+
+        except Exception as e:
+            logging.error('Error updating configuration file with defaults: %s', str(e))
+
+    def _notify_config_upgrade(self, added_defaults: List[str]):
+        """Notify user about configuration upgrade with visible warning"""
+        # Simplified warning message with documentation reference
+        backup_file = getattr(self, '_backup_file_created', None)
+
+        logging.warning('=' * 60)
+        logging.warning('CONFIGURATION UPGRADED TO VERSION 5')
+        if backup_file:
+            logging.warning('Backup created: %s', backup_file)
+        logging.warning('Updated settings: %s', self.config_file)
+        logging.warning('Documentation: https://github.com/th0ma7/tv_grab_gracenote2epg')
+        logging.warning('=' * 60)
 
     def _check_langdetect_available(self) -> bool:
         """Check if langdetect library is available"""
@@ -466,49 +602,94 @@ class ConfigManager:
         except ImportError:
             return False
 
-    def _clean_and_migrate_config(self, valid_settings: Dict[str, str], deprecated_list: List[str]):
-        """Clean and migrate configuration file"""
+    def _clean_and_migrate_config(self, valid_settings: Dict[str, str], removed_settings: List[str],
+                                 ordering_needed: bool = False):
+        """Clean and reorder configuration file - ENHANCED VERSION"""
         try:
-            if not deprecated_list:
-                logging.debug('No deprecated settings found - configuration file is clean')
-                return
+            # Create backup only if we're making changes
+            if removed_settings or ordering_needed:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup_file = f"{self.config_file}.backup.{timestamp}"
+                shutil.copy2(self.config_file, backup_file)
+                logging.info('Created configuration backup: %s', backup_file)
 
-            # Create backup
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = f"{self.config_file}.backup.{timestamp}"
-            shutil.copy2(self.config_file, backup_file)
-            logging.info('Created configuration backup: %s', backup_file)
+                # Store backup file path for user notification
+                self._backup_file_created = backup_file
 
-            # Write cleaned and migrated configuration
+            # Write cleaned and ordered configuration
             self._write_clean_config(valid_settings)
 
-            logging.info('Configuration cleaned and migrated successfully')
-            logging.info('  Removed/migrated %d deprecated settings: %s',
-                        len(deprecated_list), ', '.join(deprecated_list))
-            logging.info('  Updated to version 5 with simplified lineupid configuration')
+            # Log what was done at INFO level (not WARNING)
+            changes = []
+            if removed_settings:
+                changes.append(f'removed {len(removed_settings)} deprecated/unknown settings')
+            if ordering_needed:
+                changes.append('reordered settings for consistency')
+
+            logging.info('Configuration updated successfully: %s', ', '.join(changes))
+
+            if removed_settings:
+                logging.info('  Removed settings: %s', ', '.join(removed_settings))
+
+            logging.info('  Updated to version 5 with unified retention policies')
+
+            # User notification about cleanup/migration - simplified
+            if removed_settings:
+                self._notify_config_cleanup(removed_settings)
 
         except Exception as e:
-            logging.error('Error cleaning configuration file: %s', str(e))
+            logging.error('Error updating configuration file: %s', str(e))
             logging.error('Continuing with existing configuration...')
 
+    def _notify_config_cleanup(self, removed_settings: List[str]):
+        """Notify user about configuration cleanup"""
+        # Log at INFO level instead of WARNING - this is normal operation
+        logging.info('Configuration cleanup: removed %d deprecated settings: %s',
+                    len(removed_settings), ', '.join(removed_settings))
+        # Don't duplicate backup message - it's already shown in the main upgrade message
+
     def _write_clean_config(self, valid_settings: Dict[str, str]):
-        """Write cleaned configuration file"""
+        """Write configuration file in proper order with nice formatting"""
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n')
-            f.write('<settings version="5">\n')  # Updated version
+            f.write('<settings version="5">\n')
 
-            # Write settings in preferred order
-            for setting_id in self.SETTINGS_ORDER:
-                if setting_id in valid_settings:
+            # Group settings with comments for better readability
+            sections = [
+                ('Basic guide settings', ['zipcode', 'lineupid', 'days']),
+                ('Station filtering', ['slist', 'stitle']),
+                ('Extended details and language detection', ['xdetails', 'xdesc', 'langdetect']),
+                ('Display options', ['epgenre', 'epicon']),
+                ('TVheadend integration', ['tvhoff', 'tvhurl', 'tvhport', 'tvhmatch', 'chmatch', 'usern', 'passw']),
+                ('Cache and retention policies', ['redays', 'refresh', 'logrotate', 'relogs', 'rexmltv'])
+            ]
+
+            written_settings = set()
+
+            for section_name, section_settings in sections:
+                # Check if this section has any settings to write
+                has_settings = any(setting_id in valid_settings for setting_id in section_settings)
+
+                if has_settings:
+                    f.write(f'\n  <!-- {section_name} -->\n')
+
+                    for setting_id in section_settings:
+                        if setting_id in valid_settings:
+                            value = valid_settings[setting_id]
+                            if value is not None and str(value).strip():
+                                f.write(f'  <setting id="{setting_id}">{value}</setting>\n')
+                            else:
+                                f.write(f'  <setting id="{setting_id}"></setting>\n')
+                            written_settings.add(setting_id)
+
+            # Write any remaining settings not in predefined sections (alphabetically)
+            remaining_settings = sorted([setting_id for setting_id in valid_settings
+                                       if setting_id not in written_settings])
+
+            if remaining_settings:
+                f.write('\n  <!-- Other settings -->\n')
+                for setting_id in remaining_settings:
                     value = valid_settings[setting_id]
-                    if value is not None and str(value).strip():
-                        f.write(f'  <setting id="{setting_id}">{value}</setting>\n')
-                    else:
-                        f.write(f'  <setting id="{setting_id}"></setting>\n')
-
-            # Write any remaining settings not in ordered list
-            for setting_id, value in valid_settings.items():
-                if setting_id not in self.SETTINGS_ORDER:
                     if value is not None and str(value).strip():
                         f.write(f'  <setting id="{setting_id}">{value}</setting>\n')
                     else:
@@ -516,30 +697,63 @@ class ConfigManager:
 
             f.write('</settings>\n')
 
-    def _validate_logrotate_settings(self):
-        """Validate log rotation configuration settings"""
-        # Validate logrotate_interval
-        interval = self.settings.get('logrotate_interval', 'weekly').lower()
-        valid_intervals = ['daily', 'weekly', 'monthly']
+    def _validate_cache_and_retention_policies(self):
+        """Validate unified cache and retention policy configuration settings"""
+        # Validate logrotate
+        logrotate = self.settings.get('logrotate', 'true').lower().strip()
+        valid_rotations = ['true', 'false', 'daily', 'weekly', 'monthly']
 
-        if interval not in valid_intervals:
-            logging.warning('Invalid log rotation interval "%s", using default "weekly"', interval)
-            self.settings['logrotate_interval'] = 'weekly'
+        if logrotate not in valid_rotations:
+            logging.warning('Invalid logrotate value "%s", using default "true"', logrotate)
+            self.settings['logrotate'] = 'true'
         else:
-            self.settings['logrotate_interval'] = interval
+            self.settings['logrotate'] = logrotate
 
-        # Validate logrotate_keep
-        keep_setting = self.settings.get('logrotate_keep', '14')
+        # Validate relogs (log retention)
+        relogs = self.settings.get('relogs', '30').strip()
+        if not self._validate_retention_value(relogs):
+            logging.warning('Invalid relogs value "%s", using default "30"', relogs)
+            self.settings['relogs'] = '30'
+
+        # Validate rexmltv (XMLTV backup retention)
+        rexmltv = self.settings.get('rexmltv', '7').strip()
+        if not self._validate_retention_value(rexmltv):
+            logging.warning('Invalid rexmltv value "%s", using default "7"', rexmltv)
+            self.settings['rexmltv'] = '7'
+
+        # Validate redays >= days
         try:
-            keep_count = int(keep_setting)
-            if keep_count < 0 or keep_count > 365:
-                logging.warning('Invalid log rotation keep count %d, using default 14', keep_count)
-                self.settings['logrotate_keep'] = '14'
-            elif keep_count == 0:
-                logging.info('Log rotation keep count set to 0 - unlimited backup files')
+            days = int(self.settings.get('days', '1'))
+            redays = int(self.settings.get('redays', str(days)))
+
+            if redays < days:
+                logging.warning('redays (%d) must be >= days (%d), adjusting redays to %d', redays, days, days)
+                self.settings['redays'] = str(days)
+            # Remove the excessive warning - just log at debug level
+            elif redays > days * 3:  # Reasonable upper limit
+                logging.debug('redays (%d) is much higher than days (%d) - see documentation for optimization tips', redays, days)
+
         except (ValueError, TypeError):
-            logging.warning('Invalid log rotation keep setting "%s", using default 14', keep_setting)
-            self.settings['logrotate_keep'] = '14'
+            # Set redays to match days if invalid
+            days = int(self.settings.get('days', '1'))
+            self.settings['redays'] = str(days)
+            logging.warning('Invalid redays value, setting to match days (%d)', days)
+
+    def _validate_retention_value(self, value: str) -> bool:
+        """Validate retention value: must be number (days) or weekly/monthly/quarterly/unlimited"""
+        if not value:
+            return False
+
+        # Check if it's a number (days)
+        try:
+            days = int(value)
+            return 0 <= days <= 3650  # 0 to 10 years seems reasonable
+        except ValueError:
+            pass
+
+        # Check if it's a valid period
+        valid_periods = ['weekly', 'monthly', 'quarterly', 'unlimited']
+        return value.lower() in valid_periods
 
     def display_lineup_detection_test(self, postal_code: str, debug_mode: bool = False) -> bool:
         """
@@ -848,13 +1062,95 @@ class ConfigManager:
             'postal_code': postal_code
         }
 
-    def get_logrotate_config(self) -> Dict[str, Any]:
-        """Get log rotation configuration"""
+    def get_retention_config(self) -> Dict[str, Any]:
+        """Get unified cache and retention configuration"""
+        # Parse logrotate setting
+        logrotate = self.settings.get('logrotate', 'true').lower()
+
+        # Convert to rotation configuration
+        if logrotate == 'false':
+            rotation_enabled = False
+            rotation_interval = 'daily'  # Default when disabled
+        elif logrotate == 'true':
+            rotation_enabled = True
+            rotation_interval = 'daily'  # Default when true
+        elif logrotate in ['daily', 'weekly', 'monthly']:
+            rotation_enabled = True
+            rotation_interval = logrotate
+        else:
+            rotation_enabled = True
+            rotation_interval = 'daily'  # Fallback
+
+        # Parse retention values and convert to days
+        log_retention_days = self._parse_retention_to_days(
+            self.settings.get('relogs', '30'),
+            rotation_interval
+        )
+
+        xmltv_retention_days = self._parse_retention_to_days(
+            self.settings.get('rexmltv', '7'),
+            'daily'  # XMLTV backups are always daily
+        )
+
         return {
-            'enabled': self.settings.get('logrotate_enabled', True),
-            'interval': self.settings.get('logrotate_interval', 'weekly'),
-            'keep_files': int(self.settings.get('logrotate_keep', '14'))
+            # Log rotation configuration
+            'enabled': rotation_enabled,
+            'interval': rotation_interval,
+            'keep_files': self._days_to_keep_files(log_retention_days, rotation_interval),
+
+            # Extended retention information
+            'log_retention_days': log_retention_days,
+            'xmltv_retention_days': xmltv_retention_days,
+
+            # Original settings for logging
+            'logrotate_setting': self.settings.get('logrotate', 'true'),
+            'relogs_setting': self.settings.get('relogs', '30'),
+            'rexmltv_setting': self.settings.get('rexmltv', '7'),
         }
+
+    def _parse_retention_to_days(self, retention_value: str, interval: str) -> int:
+        """Convert retention setting to number of days"""
+        retention_value = retention_value.strip().lower()
+
+        # Handle numeric values (days)
+        try:
+            return int(retention_value)
+        except ValueError:
+            pass
+
+        # Handle period-based retention
+        if retention_value == 'weekly':
+            return 7
+        elif retention_value == 'monthly':
+            return 30
+        elif retention_value == 'quarterly':
+            return 90
+        elif retention_value == 'unlimited':
+            return 0  # 0 means unlimited
+        else:
+            # Default based on interval
+            if interval == 'daily':
+                return 30
+            elif interval == 'weekly':
+                return 90  # ~3 months
+            elif interval == 'monthly':
+                return 365  # 1 year
+            else:
+                return 30
+
+    def _days_to_keep_files(self, retention_days: int, interval: str) -> int:
+        """Convert retention days to number of backup files to keep"""
+        if retention_days == 0:
+            return 0  # Unlimited
+
+        if interval == 'daily':
+            return retention_days
+        elif interval == 'weekly':
+            return max(1, retention_days // 7)
+        elif interval == 'monthly':
+            return max(1, retention_days // 30)
+        else:
+            return retention_days
 
     def get_country(self) -> str:
         """Determine country from zipcode format"""
@@ -923,20 +1219,27 @@ class ConfigManager:
         logging.info('  xdesc (use extended descriptions): %s', self.settings.get('xdesc'))
         logging.info('  langdetect (automatic language detection): %s', self.settings.get('langdetect'))
 
-        # Log cache refresh configuration
+        # Log cache and retention configuration
         refresh_hours = self.get_refresh_hours()
+        redays = int(self.settings.get('redays', '1'))
+
+        logging.info('Cache and retention policies:')
         if refresh_hours == 0:
             logging.info('  refresh: disabled (use all cached data)')
         else:
             logging.info('  refresh: %d hours (refresh first %d hours of guide)', refresh_hours, refresh_hours)
 
-        # Log rotation configuration
-        logrotate_config = self.get_logrotate_config()
-        if logrotate_config['enabled']:
-            logging.info('  log rotation: enabled (%s, keep %d files)',
-                        logrotate_config['interval'], logrotate_config['keep_files'])
+        logging.info('  redays: %d days (cache retention period)', redays)
+
+        # Log unified retention configuration
+        retention_config = self.get_retention_config()
+        if retention_config['enabled']:
+            logging.info('  logrotate: enabled (%s, %d days retention)',
+                        retention_config['interval'], retention_config['log_retention_days'])
         else:
-            logging.info('  log rotation: disabled')
+            logging.info('  logrotate: disabled')
+
+        logging.info('  rexmltv: %d days (XMLTV backup retention)', retention_config['xmltv_retention_days'])
 
         # Log configuration logic
         xdetails = self.settings.get('xdetails', False)

@@ -4,6 +4,7 @@ gracenote2epg - North America TV Guide Grabber
 
 A modular Python implementation for downloading TV guide data from
 tvlistings.gracenote.com with intelligent caching and TVheadend integration.
+Updated with unified retention policies for logs and XMLTV backups.
 """
 
 import logging
@@ -11,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-# Specifics imports
+# Specific imports
 from .gracenote2epg_args import ArgumentParser
 from .gracenote2epg_config import ConfigManager
 from .gracenote2epg_downloader import OptimizedDownloader
@@ -25,9 +26,9 @@ from .gracenote2epg_logrotate import LogRotationManager
 from . import __version__
 
 
-def check_rotation_status(log_file: Path, rotation_config: dict):
+def check_rotation_status(log_file: Path, retention_config: dict):
     """Check and report any rotation that occurred during startup"""
-    if not rotation_config.get('enabled', False):
+    if not retention_config.get('enabled', False):
         return
 
     try:
@@ -57,13 +58,13 @@ def check_rotation_status(log_file: Path, rotation_config: dict):
                     # Extract period from filename
                     period = backup.name.replace(f"{log_basename}.", "")
                     logging.info('    Created backup: %s (%.1f MB) - %s rotation',
-                               backup.name, size_mb, rotation_config.get('interval', 'unknown'))
+                               backup.name, size_mb, retention_config.get('interval', 'unknown'))
                 except:
                     logging.info('    Created backup: %s', backup.name)
 
             current_size_mb = log_file.stat().st_size / (1024*1024) if log_file.exists() else 0
             logging.info('    Current log: %s (%.1f MB) - contains current %s only',
-                       log_basename, current_size_mb, rotation_config.get('interval', 'period'))
+                       log_basename, current_size_mb, retention_config.get('interval', 'period'))
             logging.info('  Log rotation completed successfully')
         else:
             logging.debug('No recent log rotation detected')
@@ -72,8 +73,8 @@ def check_rotation_status(log_file: Path, rotation_config: dict):
         logging.debug('Error checking rotation status: %s', str(e))
 
 
-def setup_logging(logging_config: dict, log_file: Path, rotation_config: dict):
-    """Setup logging configuration with optional log rotation"""
+def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
+    """Setup logging configuration with unified retention policy"""
     # Create log directory
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -85,8 +86,8 @@ def setup_logging(logging_config: dict, log_file: Path, rotation_config: dict):
     else:  # default
         file_level = logging.INFO
 
-    # Create rotating file handler (or standard file handler if rotation disabled)
-    file_handler = LogRotationManager.create_rotating_handler(log_file, rotation_config)
+    # Create rotating file handler using unified retention config
+    file_handler = LogRotationManager.create_rotating_handler(log_file, retention_config)
     file_handler.setLevel(file_level)
 
     # Set file formatter
@@ -116,12 +117,21 @@ def setup_logging(logging_config: dict, log_file: Path, rotation_config: dict):
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
-    # Log rotation status
-    if rotation_config.get('enabled', False):
-        rotation_status = LogRotationManager.get_rotation_status(log_file, rotation_config)
-        logging.debug('Log rotation status: interval=%s, keep=%d files, current_size=%d bytes, backups=%d',
-                     rotation_status.get('interval', 'unknown'),
-                     rotation_status.get('keep_files', 0),
+    # Log unified retention status for transparency
+    if retention_config.get('enabled', False):
+        rotation_status = LogRotationManager.get_rotation_status(log_file, retention_config)
+
+        log_retention = retention_config.get('log_retention_days', 30)
+        xmltv_retention = retention_config.get('xmltv_retention_days', 7)
+
+        # Log details about unified retention policy
+        logging.debug('Unified retention policy:')
+        logging.debug('  Log rotation: %s (%s interval, %d days retention)',
+                     'enabled' if retention_config.get('enabled') else 'disabled',
+                     retention_config.get('interval', 'daily'),
+                     log_retention)
+        logging.debug('  XMLTV backups: %d days retention', xmltv_retention)
+        logging.debug('  Current log size: %d bytes, backup files: %d',
                      rotation_status.get('current_log_size', 0),
                      rotation_status.get('backup_files_count', 0))
 
@@ -205,15 +215,15 @@ def main():
             lineupid=getattr(args, 'original_lineupid', None)
         )
 
-        # Get log rotation configuration
-        logrotate_config = config_manager.get_logrotate_config()
+        # Get unified retention configuration (replaces old logrotate_config)
+        retention_config = config_manager.get_retention_config()
 
-        # Setup logging with rotation
+        # Setup logging with unified retention policy
         logging_config = arg_parser.get_logging_config(args)
-        file_handler = setup_logging(logging_config, log_file, logrotate_config)
+        file_handler = setup_logging(logging_config, log_file, retention_config)
 
         # FIRST: Check for log rotation (this may truncate/rebuild the log file)
-        if logrotate_config.get('enabled', False) and hasattr(file_handler, '_check_startup_rotation'):
+        if retention_config.get('enabled', False) and hasattr(file_handler, '_check_startup_rotation'):
             try:
                 logging.info('Checking for startup log rotation...')
                 file_handler._check_startup_rotation()
@@ -222,7 +232,7 @@ def main():
                 logging.warning('Error during startup rotation check: %s', str(e))
 
         # Report any rotation that occurred (includes its own separator if needed)
-        check_rotation_status(log_file, logrotate_config)
+        check_rotation_status(log_file, retention_config)
 
         # NOW start the normal session logging with consistent separator
         logging.info('=' * 60)
@@ -292,8 +302,9 @@ def main():
         else:
             logging.info('Cache refresh: %d hours (first %d hours will be re-downloaded)', refresh_hours, refresh_hours)
 
-        # Perform initial cache cleanup
-        cache_manager.perform_initial_cleanup(grid_time_start, days, xmltv_file)
+        # Perform initial cache cleanup with unified retention policy
+        xmltv_retention_days = retention_config.get('xmltv_retention_days', 7)
+        cache_manager.perform_initial_cleanup(grid_time_start, days, xmltv_file, xmltv_retention_days)
 
         # Download and parse guide data
         with OptimizedDownloader(base_delay=0.8, min_delay=0.4) as downloader:
@@ -352,6 +363,26 @@ def main():
             logging.info('  Total requests: %d', final_stats['total_requests'])
             logging.info('  WAF blocks encountered: %d', final_stats['waf_blocks'])
             logging.info('  Final delay: %.2fs', final_stats['current_delay'])
+
+            # Log final cache and retention policy status for transparency
+            if retention_config.get('enabled', False):
+                log_retention = retention_config.get('log_retention_days', 30)
+                xmltv_retention = retention_config.get('xmltv_retention_days', 7)
+
+                if log_retention == 0:
+                    log_desc = 'unlimited'
+                else:
+                    log_desc = f'{log_retention} days'
+
+                if xmltv_retention == 0:
+                    xmltv_desc = 'unlimited'
+                else:
+                    xmltv_desc = f'{xmltv_retention} days'
+
+                logging.info('Unified cache and retention policy applied:')
+                logging.info('  logrotate: %s (%s retention)',
+                           retention_config.get('interval', 'daily'), log_desc)
+                logging.info('  rexmltv: %s retention', xmltv_desc)
 
             # Output XMLTV to stdout ONLY if not redirected to file
             # XMLTV standard: XML goes to stdout, logs go to stderr or file
