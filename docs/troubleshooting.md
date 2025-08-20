@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide covers common issues and their solutions when using gracenote2epg.
+This guide covers general issues with gracenote2epg. For TVheadend-specific problems, see the **[TVheadend Guide](tvheadend.md)**.
 
 ## Quick Diagnostic Commands
 
@@ -21,6 +21,18 @@ python -c "import langdetect; print('Language detection: OK')"
 python -c "import polib; print('Translations: OK')"
 ```
 
+## 📺 TVheadend Issues
+
+**For TVheadend-specific problems**, see the **[TVheadend Integration Guide](tvheadend.md)**:
+
+- Channels appear but no programs in TVheadend
+- EPG grabber migration in TVheadend  
+- TVheadend EPG database reset procedures
+- Channel filtering and matching issues
+- TVheadend log analysis
+
+**Continue reading below for general gracenote2epg issues.**
+
 ## Installation Issues
 
 ### Command Not Found
@@ -29,8 +41,8 @@ python -c "import polib; print('Translations: OK')"
 
 **Solutions**:
 ```bash
-# Solution 1: Install with pip (installs both commands)
-pip install gracenote2epg
+# Solution 1: Install from GitHub (PyPI not yet available)
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
 
 # Solution 2: Use module execution
 python -m gracenote2epg --version
@@ -40,12 +52,15 @@ find /usr/local/bin /usr/bin ~/.local/bin -name "tv_grab_gracenote2epg" 2>/dev/n
 
 # Solution 4: Verify installation includes wrapper script
 pip show -f gracenote2epg | grep tv_grab_gracenote2epg
+
+# 🔮 Future: Once PyPI is available
+# pip install gracenote2epg[full]
 ```
 
 **Important**: The `tv_grab_gracenote2epg` wrapper script is **essential** for TVheadend integration. If missing:
 - TVheadend won't detect the grabber
 - XMLTV standard compliance is broken
-- Manual re-installation may be required
+- Re-installation from GitHub may be required
 
 ### Missing Features
 
@@ -55,8 +70,13 @@ pip show -f gracenote2epg | grep tv_grab_gracenote2epg
 python -c "import langdetect; print('OK')"
 # If error: ModuleNotFoundError: No module named 'langdetect'
 
-# Solution: Install full features
-pip install gracenote2epg[full]
+# Solution: Install with full features from GitHub
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+# OR manually install dependency
+pip install langdetect
+
+# 🔮 Future PyPI command:
+# pip install gracenote2epg[full]
 ```
 
 **Problem**: Categories not translating
@@ -65,10 +85,10 @@ pip install gracenote2epg[full]
 python -c "import polib; print('OK')"
 # If error: ModuleNotFoundError: No module named 'polib'
 
-# Solution: Install translations
+# Solution: Install with full features from GitHub
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+# OR manually install dependency
 pip install polib
-# OR
-pip install gracenote2epg[full]
 ```
 
 ### Permission Issues
@@ -76,15 +96,18 @@ pip install gracenote2epg[full]
 **Problem**: Permission denied when creating directories
 ```bash
 # Solution 1: Install for user only
-pip install --user gracenote2epg[full]
+pip install --user git+https://github.com/th0ma7/gracenote2epg.git[full]
 
 # Solution 2: Use virtual environment
 python3 -m venv gracenote_env
 source gracenote_env/bin/activate
-pip install gracenote2epg[full]
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
 
 # Solution 3: Fix directory permissions
 chmod 755 ~/gracenote2epg/
+
+# 🔮 Future PyPI commands:
+# pip install --user gracenote2epg[full]
 ```
 
 ## Configuration Issues
@@ -196,65 +219,24 @@ du -sh ~/gracenote2epg/log/
 <setting id="rexmltv">3</setting>    <!-- 3 days XMLTV backups -->
 ```
 
-## TVheadend Integration Issues
-
-### Channels Detected But No Programs
-
-**Problem**: TVheadend shows channels but no EPG data
-```
-[INFO]:xmltv: channels   tot=   33 new=    0 mod=    0  ← Channels OK
-[INFO]:xmltv: episodes   tot=    0 new=    0 mod=    0  ← No programs!
-```
-
-**Solution**: Complete EPG database reset (see [Migration Guide](migration.md))
-
-### Channel Filtering Not Working
-
-**Problem**: Wrong channels or no filtering
-```bash
-# Check TVheadend connection
-grep -E "(tvhoff|tvhurl|tvhport)" ~/gracenote2epg/conf/gracenote2epg.xml
-
-# Test TVheadend access
-curl http://127.0.0.1:9981/api/channel/grid
-
-# Enable debug to see filtering details
-tv_grab_gracenote2epg --debug --console --days 1
-```
-
-### Channel Number Mismatches
-
-**Problem**: Channel numbers don't match TVheadend
-```bash
-# Enable channel number matching
-<setting id="chmatch">true</setting>
-
-# Check debug output for channel matching
-tv_grab_gracenote2epg --debug --console --days 1 | grep -i channel
-```
-
 ## XMLTV Issues
 
-### Invalid XMLTV Output
+### XMLTV File Problems
 
-**Problem**: XMLTV fails validation
+**Problem**: Issues with XMLTV output format or content
 ```bash
-# Validate XMLTV output
-xmllint --noout --dtdvalid xmltv.dtd ~/gracenote2epg/cache/xmltv.xml
+# Basic file check
+ls -lh ~/gracenote2epg/cache/xmltv.xml
 
-# Download DTD if needed
-wget http://xmltv.cvs.sourceforge.net/viewvc/*checkout*/xmltv/xmltv/xmltv.dtd
-```
+# Quick content verification
+grep -c "programme start=" ~/gracenote2epg/cache/xmltv.xml  # Should show program count
+head -5 ~/gracenote2epg/cache/xmltv.xml | grep -E "(xml|DOCTYPE)"  # Check format
 
-**Problem**: Encoding issues in XMLTV
-```bash
 # Check file encoding
-file ~/gracenote2epg/cache/xmltv.xml
-
-# Should show: UTF-8 Unicode text
-# If not, check locale settings
-locale
+file ~/gracenote2epg/cache/xmltv.xml  # Should show UTF-8
 ```
+
+**For technical XMLTV validation** (DTD validation, standards compliance): See **[Development Guide](development.md#xmltv-validation)**
 
 ### Missing Program Data
 
@@ -439,24 +421,33 @@ tv_grab_gracenote2epg --show-lineup --zip YOUR_CODE --debug
 # Test basic functionality  
 tv_grab_gracenote2epg --days 1 --zip YOUR_CODE --debug --console
 
-# Test TVheadend integration
-curl -s http://127.0.0.1:9981/api/channel/grid | head
+# Check XMLTV file was created
+ls -lh ~/gracenote2epg/cache/xmltv.xml
 
-# Validate XMLTV output
-xmllint --noout ~/gracenote2epg/cache/xmltv.xml
+# For technical XMLTV validation: see docs/development.md
 ```
+
+### Documentation References
+
+- **[TVheadend Issues](tvheadend.md)** - TVheadend-specific problems and EPG migration
+- **[Configuration Guide](configuration.md)** - Complete configuration reference  
+- **[Installation Guide](installation.md)** - Installation and software migration
+- **[Development Guide](development.md)** - Technical validation, testing, and development
+- **[GitHub Issues](https://github.com/th0ma7/gracenote2epg/issues)** - Report bugs and get help
 
 ## Common Solutions Summary
 
 | Problem | Quick Solution |
 |---------|----------------|
-| Command not found | `pip install gracenote2epg` |
-| No language detection | `pip install gracenote2epg[full]` |
+| Command not found | Install from GitHub: `pip install git+https://github.com/th0ma7/gracenote2epg.git[full]` |
+| No language detection | `pip install git+https://github.com/th0ma7/gracenote2epg.git[full]` |
 | Configuration errors | `tv_grab_gracenote2epg --show-lineup --zip CODE` |
-| No programs in TVheadend | [Complete EPG reset](migration.md) |
+| **TVheadend no programs** | **[See TVheadend Guide](tvheadend.md)** |
 | Download failures | Enable `--debug` and check network |
 | Cache issues | Verify `redays >= days` |
 | Slow performance | Increase cache retention, reduce refresh window |
-| Invalid XMLTV | Check encoding and validate with xmllint |
+| **XMLTV validation** | **[See Development Guide](development.md)** |
+
+**For TVheadend-specific issues**: See the **[TVheadend Integration Guide](tvheadend.md)**
 
 Remember: Most issues can be diagnosed with `--debug --console` output!

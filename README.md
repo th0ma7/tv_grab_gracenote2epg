@@ -1,9 +1,13 @@
 # gracenote2epg - TV Guide Grabber for North America
 
+> **📦 PyPI Status**: Publication pending - Install from [GitHub](https://github.com/th0ma7/gracenote2epg) for now
+
 A modern Python implementation for downloading TV guide data from tvlistings.gracenote.com with intelligent caching and TVheadend integration.
 
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![GitHub](https://img.shields.io/badge/GitHub-Available-green.svg)](https://github.com/th0ma7/gracenote2epg)
+[![PyPI](https://img.shields.io/badge/PyPI-Pending-orange.svg)](#)
 
 ## 🌟 Key Features
 
@@ -16,14 +20,23 @@ A modern Python implementation for downloading TV guide data from tvlistings.gra
 
 ## 🚀 Quick Start
 
+> **📦 Note**: PyPI publication is pending. Currently install from source (see [Installation Guide](docs/installation.md))
+
 ### Installation
 
 ```bash
-# Install with full features (recommended) - NOT YET PUBLISHED ON pypi.org
-pip install gracenote2epg[full]
+# ⏳ PyPI publication pending - Install from source for now:
 
-# Basic installation
-pip install gracenote2epg
+# Method 1: Clone and install
+git clone https://github.com/th0ma7/gracenote2epg.git
+cd gracenote2epg
+pip install .[full]
+
+# Method 2: Install directly from GitHub
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# 🔮 Future PyPI installation (once published):
+# pip install gracenote2epg[full]
 ```
 
 ### Basic Usage
@@ -54,17 +67,17 @@ The script auto-creates a configuration file on first run. Basic setup:
 
 ## 📚 Documentation
 
-- **[Installation Guide](docs/installation.md)** - Detailed installation instructions for all platforms
+- **[Installation Guide](docs/installation.md)** - Installation instructions and software migration
 - **[Configuration](docs/configuration.md)** - Complete configuration reference
 - **[Lineup Configuration](docs/lineup-configuration.md)** - Finding and configuring your TV lineup
-- **[Migration Guide](docs/migration.md)** - Migrating from other EPG grabbers
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[TVheadend Integration](docs/tvheadend.md)** - TVheadend setup, EPG migration, and troubleshooting
+- **[Troubleshooting](docs/troubleshooting.md)** - General issues and solutions
 
 ### Advanced Topics
 
 - **[Cache & Retention Policies](docs/cache-retention.md)** - Managing cache and log retention
 - **[Log Rotation](docs/log-rotation.md)** - Built-in log rotation system
-- **[Development](docs/development.md)** - Contributing and development setup
+- **[Development](docs/development.md)** - Contributing, testing, XMLTV validation, and development setup
 
 ## 🆘 Need Help?
 

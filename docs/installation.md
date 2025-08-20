@@ -1,54 +1,70 @@
 # Installation Guide
 
+> **⚠️ Important**: gracenote2epg is not yet published on PyPI. Currently available installation methods are from source only.
+
 This guide covers all installation methods for gracenote2epg on different platforms.
 
-## System Requirements
+## 📦 Publication Status
 
-- **Python**: 3.7 or higher
-- **Operating System**: Linux, macOS, Windows (Linux distributions preferred)
-- **Network**: Internet connection for downloading guide data
+- **✅ GitHub**: Available for source installation
+- **⏳ PyPI**: Publication pending
+- **🔮 Future**: `pip install gracenote2epg[full]` will be available once published
 
 ## Installation Methods
 
-### Method 1: PyPI Installation (Recommended)
+### Method 1: Install from GitHub (Recommended)
 
-#### Basic Installation
+#### With Full Features
 ```bash
-# Install basic package
-pip install gracenote2epg
+# Install directly from GitHub with all features
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
 
-# Install with full features (language detection + translations)
-pip install gracenote2epg[full]
+# Basic installation from GitHub
+pip install git+https://github.com/th0ma7/gracenote2epg.git
 ```
 
-#### Feature-Specific Installation
+### Method 2: Clone and Install
 ```bash
-# Only language detection
-pip install gracenote2epg[langdetect]
-
-# Only translations
-pip install gracenote2epg[translations]
+# Clone repository and install
+git clone https://github.com/th0ma7/gracenote2epg.git
+cd gracenote2epg
+pip install .[full]  # Install with full features
+pip install .        # Basic installation
 ```
 
-### Method 2: From Wheel Package
-```bash
-# Download and install wheel
-pip install gracenote2epg-1.4-py3-none-any.whl[full]
-```
-
-### Method 3: From Source Distribution
-```bash
-# Extract and use directly (no installation required)
-tar -xzf gracenote2epg-1.4.tar.gz
-cd gracenote2epg-1.4
-./tv_grab_gracenote2epg --capabilities
-```
-
-### Method 4: Development Installation
+### Method 3: Development Installation
 ```bash
 git clone https://github.com/th0ma7/gracenote2epg.git
 cd gracenote2epg
 pip install -e .[full]  # Editable install with full features
+```
+
+### Method 4: Manual Installation (Source Distribution)
+```bash
+# Download source from GitHub releases (if available)
+wget https://github.com/th0ma7/gracenote2epg/archive/v1.4.tar.gz
+tar -xzf v1.4.tar.gz
+cd gracenote2epg-1.4
+pip install .[full]
+
+# Or run directly without installation
+./tv_grab_gracenote2epg --capabilities
+```
+
+### 🔮 Future: PyPI Installation (Once Published)
+
+Once gracenote2epg is published on PyPI, these commands will work:
+
+```bash
+# Basic installation (future)
+pip install gracenote2epg
+
+# Install with full features (future - recommended)
+pip install gracenote2epg[full]
+
+# Feature-specific installation (future)
+pip install gracenote2epg[langdetect]
+pip install gracenote2epg[translations]
 ```
 
 ## Platform-Specific Instructions
@@ -125,17 +141,17 @@ gracenote2epg is available in two distribution formats:
 
 ## Available Commands After Installation
 
-### After pip install (Wheel Package)
+### After GitHub Installation
 ```bash
 gracenote2epg --version              # Primary command
 tv_grab_gracenote2epg --capabilities # XMLTV standard wrapper (ESSENTIAL)
 python -m gracenote2epg --version    # Module execution
 ```
 
-### From source distribution (extract .tar.gz)
+### From Manual Source Installation
 ```bash
-./tv_grab_gracenote2epg --capabilities # Wrapper script in bin/ directory
-python3 -m gracenote2epg --version     # Module execution
+./tv_grab_gracenote2epg --capabilities # Wrapper script in project directory
+python3 -m gracenote2epg --version     # Module execution (if installed)
 ```
 
 **Critical**: The `tv_grab_gracenote2epg` command is **required** for:
@@ -143,16 +159,36 @@ python3 -m gracenote2epg --version     # Module execution
 - XMLTV standard compliance  
 - Integration with other XMLTV-compatible software
 
-Both installation methods provide this essential wrapper script.
+All installation methods provide this essential wrapper script.
 
 ## Feature Dependencies
 
 ### Core Dependencies (Always Installed)
 - `requests>=2.25.0` - HTTP requests for downloading guide data
 
-### Optional Dependencies
+### Optional Dependencies (via extras_require)
 - `langdetect>=1.0.9` - Automatic language detection for French/English/Spanish
 - `polib>=1.1.0` - Category and term translations using .po files
+
+### Setup.py Configuration for Extras
+
+To support feature-specific installation (`pip install gracenote2epg[langdetect]`), add this to your `setup.py`:
+
+```python
+setup(
+    # ... other parameters ...
+    install_requires=[
+        'requests>=2.25.0',
+    ],
+    extras_require={
+        'langdetect': ['langdetect>=1.0.9'],
+        'translations': ['polib>=1.1.0'],
+        'full': ['langdetect>=1.0.9', 'polib>=1.1.0'],
+        'dev': ['langdetect>=1.0.9', 'polib>=1.1.0', 'pytest>=6.0'],
+    },
+    # ... rest of setup.py ...
+)
+```
 
 ### Installing Optional Features
 ```bash
@@ -160,10 +196,16 @@ Both installation methods provide this essential wrapper script.
 pip install gracenote2epg[full]
 
 # Only language detection
-pip install langdetect
+pip install gracenote2epg[langdetect]
 
 # Only translations  
-pip install polib
+pip install gracenote2epg[translations]
+
+# Development features
+pip install gracenote2epg[dev]
+
+# Or install dependencies manually
+pip install langdetect polib
 
 # Check if features are available
 python -c "import langdetect; print('Language detection: OK')"
@@ -192,7 +234,7 @@ try:
     import langdetect
     print('✓ Language detection available')
 except ImportError:
-    print('✗ Language detection not available')
+    print('✗ Language detection not available - install with [full]')
 "
 
 # Test translations
@@ -201,8 +243,33 @@ try:
     import polib
     print('✓ Translations available')  
 except ImportError:
-    print('✗ Translations not available')
+    print('✗ Translations not available - install with [full]')
 "
+```
+
+## Upgrading
+
+### From GitHub
+```bash
+# Upgrade to latest version
+pip install --upgrade git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# For editable installs
+cd gracenote2epg
+git pull
+pip install -e .[full]
+
+# Check new version
+tv_grab_gracenote2epg --version
+```
+
+### 🔮 Future: From PyPI (Once Published)
+```bash
+# Upgrade to latest version (future)
+pip install --upgrade gracenote2epg[full]
+
+# Check new version
+tv_grab_gracenote2epg --version
 ```
 
 ## Default Directories
@@ -264,16 +331,25 @@ After installation:
 2. **[Basic configuration](configuration.md)** - Configure the grabber settings
 3. **[Test your setup](troubleshooting.md#testing-setup)** - Verify everything works
 
-## Upgrading
+## 🚀 Publishing to PyPI (For Maintainers)
 
-### From PyPI
+When ready to publish on PyPI:
+
 ```bash
-# Upgrade to latest version
-pip install --upgrade gracenote2epg[full]
+# 1. Install build tools
+pip install build twine
 
-# Check new version
-tv_grab_gracenote2epg --version
+# 2. Build distributions
+python -m build
+
+# 3. Upload to PyPI (requires API token)
+python -m twine upload dist/*
+
+# 4. Test PyPI installation
+pip install gracenote2epg[full]
 ```
+
+After PyPI publication, update documentation to use standard pip commands.
 
 ### Migration Notes
 See the **[Migration Guide](migration.md)** if upgrading from:
