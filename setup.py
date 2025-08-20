@@ -80,19 +80,21 @@ setup(
         ],
     },
 
-    # Additional files - documentation, config, and wrapper scripts
     data_files=[
         ('share/doc/gracenote2epg', [
-            'README.md',
-            'LICENSE',
-            'PACKAGING.md',
-            'CHANGELOG.md',
-            'LOG_ROTATION.md',
-            'LINEUPID.md',
-            'CACHE_RETENTION_POLICIES.md'
+            'docs/installation.md',
+            'docs/configuration.md',
+            'docs/lineup-configuration.md',
+            'docs/cache-retention.md',
+            'docs/log-rotation.md',
+            'docs/migration.md',
+            'docs/troubleshooting.md',
+            'docs/development.md',
+            'docs/changelog.md',
+            'LICENSE'
         ]),
         ('share/gracenote2epg', ['gracenote2epg.xml']),
-        ('bin', ['tv_grab_gracenote2epg']),  # Only the XMLTV standard wrapper
+        ('bin', ['tv_grab_gracenote2epg']),
     ],
 
     # Classifiers for PyPI
