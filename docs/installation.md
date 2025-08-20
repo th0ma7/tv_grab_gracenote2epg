@@ -77,8 +77,12 @@ sudo apt update
 # Install Python and pip if not already installed
 sudo apt install python3 python3-pip python3-venv
 
-# Install gracenote2epg
-pip3 install gracenote2epg[full]
+# Install gracenote2epg from GitHub
+pip3 install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Verify installation
+pip3 list | grep gracenote2epg
+tv_grab_gracenote2epg --version
 ```
 
 ### CentOS/RHEL/Fedora
@@ -86,8 +90,12 @@ pip3 install gracenote2epg[full]
 # Install Python and pip
 sudo dnf install python3 python3-pip python3-venv
 
-# Install gracenote2epg
-pip3 install gracenote2epg[full]
+# Install gracenote2epg from GitHub
+pip3 install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Verify installation
+pip3 list | grep gracenote2epg
+tv_grab_gracenote2epg --version
 ```
 
 ### Arch Linux
@@ -95,17 +103,36 @@ pip3 install gracenote2epg[full]
 # Install dependencies
 sudo pacman -S python python-pip
 
-# Install gracenote2epg
-pip install gracenote2epg[full]
+# Install gracenote2epg from GitHub
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Verify installation
+pip list | grep gracenote2epg
+tv_grab_gracenote2epg --version
 ```
 
-### Synology NAS
+### Synology NAS with TVheadend (DSM7)
 ```bash
-# Enable SSH and package center
-# Install Python 3 from Package Center
+# Prerequisites: TVheadend must already be installed from Package Center
 
-# Install via SSH
-pip3 install gracenote2epg[full]
+# Install in TVheadend environment (DSM7)
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install git+https://github.com/th0ma7/gracenote2epg.git[full]'
+
+# Verify installation in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --version'
+```
+
+### Synology NAS with TVheadend (DSM6)
+```bash
+# Prerequisites: TVheadend must already be installed from Package Center
+
+# Install in TVheadend environment (DSM6)
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install git+https://github.com/th0ma7/gracenote2epg.git[full]'
+
+# Verify installation in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --version'
 ```
 
 ### Raspberry Pi
@@ -116,8 +143,15 @@ sudo apt update && sudo apt upgrade
 # Install Python dependencies
 sudo apt install python3 python3-pip python3-venv
 
-# Install gracenote2epg
-pip3 install gracenote2epg[full]
+# Install gracenote2epg from GitHub
+pip3 install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Verify installation
+pip3 list | grep gracenote2epg
+tv_grab_gracenote2epg --version
+
+# Optional: Check available memory (Pi can be resource-constrained)
+free -h
 ```
 
 ## Package Distribution Types
@@ -216,6 +250,10 @@ python -c "import polib; print('Translations: OK')"
 
 ### Test Installation
 ```bash
+# Check if package is installed
+pip list | grep gracenote2epg
+# Expected output: gracenote2epg    1.4    /path/to/installation
+
 # Check version
 tv_grab_gracenote2epg --version
 
@@ -245,6 +283,23 @@ try:
 except ImportError:
     print('✗ Translations not available - install with [full]')
 "
+
+# Check all installed packages related to gracenote2epg
+pip list | grep -E "(gracenote2epg|langdetect|polib|requests)"
+```
+
+### Synology TVheadend Environment Verification
+```bash
+# For Synology with TVheadend, verify in the correct environment:
+
+# Check installation in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
+
+# Test capabilities in TVheadend environment  
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --capabilities'
+
+# Test lineup detection in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --show-lineup --zip 92101'
 ```
 
 ## Upgrading
@@ -254,13 +309,24 @@ except ImportError:
 # Upgrade to latest version
 pip install --upgrade git+https://github.com/th0ma7/gracenote2epg.git[full]
 
+# Verify new installation
+pip list | grep gracenote2epg
+tv_grab_gracenote2epg --version
+
 # For editable installs
 cd gracenote2epg
 git pull
 pip install -e .[full]
+```
 
-# Check new version
-tv_grab_gracenote2epg --version
+### Synology TVheadend Environment
+```bash
+# Upgrade in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install --upgrade git+https://github.com/th0ma7/gracenote2epg.git[full]'
+
+# Verify upgrade
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --version'
 ```
 
 ### 🔮 Future: From PyPI (Once Published)
@@ -285,10 +351,10 @@ gracenote2epg auto-detects your system and creates appropriate directories:
 - **Config**: `~/script.module.zap2epg/epggrab/conf/gracenote2epg.xml` (if exists)
 - **Fallback**: `~/gracenote2epg/conf/gracenote2epg.xml`
 
-### Synology DSM7
+### Synology DSM7 (with TVheadend)
 - **Config**: `/var/packages/tvheadend/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
 
-### Synology DSM6
+### Synology DSM6 (with TVheadend)
 - **Config**: `/var/packages/tvheadend/target/var/epggrab/gracenote2epg/conf/gracenote2epg.xml`
 
 ## Troubleshooting Installation
@@ -323,13 +389,105 @@ source clean_env/bin/activate
 pip install gracenote2epg[full]
 ```
 
+## Migration from Other EPG Grabbers
+
+If you're migrating from another EPG grabber, gracenote2epg can often replace it directly.
+
+### Common Migration Scenarios
+
+#### From tv_grab_zap2epg
+```bash
+# 1. Install gracenote2epg
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# 2. Test gracenote2epg works
+tv_grab_gracenote2epg --show-lineup --zip YOUR_CODE
+
+# 3. Configuration migration (optional - gracenote2epg auto-migrates)
+# Your existing zap2epg configuration will be automatically detected and migrated
+
+# 4. TVheadend integration - see docs/tvheadend.md
+```
+
+#### From Other XMLTV Grabbers
+```bash
+# Install gracenote2epg
+pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Test basic functionality
+tv_grab_gracenote2epg --capabilities
+tv_grab_gracenote2epg --show-lineup --zip YOUR_CODE
+
+# Configure (create new configuration)
+tv_grab_gracenote2epg --days 1 --zip YOUR_CODE --console --debug
+```
+
+### Configuration Compatibility
+
+gracenote2epg automatically migrates compatible settings from:
+
+- **tv_grab_zap2epg**: Most settings auto-migrate
+- **tv_grab_zap2xml**: Lineup settings compatible
+- **Other XMLTV grabbers**: Manual configuration needed
+
+### Software-Level Migration Notes
+
+- **Parallel installation**: You can install gracenote2epg alongside existing grabbers
+- **Testing phase**: Test gracenote2epg before removing old grabber
+- **Configuration backup**: Old configurations are automatically backed up
+- **Dependencies**: gracenote2epg has minimal dependencies (just `requests`)
+
 ## Next Steps
 
 After installation:
 
 1. **[Configure your lineup](lineup-configuration.md)** - Set up your TV lineup
 2. **[Basic configuration](configuration.md)** - Configure the grabber settings
-3. **[Test your setup](troubleshooting.md#testing-setup)** - Verify everything works
+3. **[TVheadend integration](tvheadend.md)** - Configure TVheadend EPG grabber (if using TVheadend)
+4. **[Test your setup](troubleshooting.md#testing-setup)** - Verify everything works
+
+### Post-Installation Validation
+
+```bash
+# Complete installation check
+echo "=== Installation Verification ==="
+pip list | grep -E "(gracenote2epg|langdetect|polib|requests)"
+
+echo "=== Command Availability ==="
+which tv_grab_gracenote2epg
+which gracenote2epg
+
+echo "=== Version Check ==="
+tv_grab_gracenote2epg --version
+gracenote2epg --version
+
+echo "=== Capabilities Test ==="
+tv_grab_gracenote2epg --capabilities
+
+echo "=== Quick Lineup Test ==="
+tv_grab_gracenote2epg --show-lineup --zip 92101
+```
+
+### For Synology/TVheadend Users
+
+```bash
+# Synology TVheadend environment validation
+echo "=== TVheadend Environment Check ==="
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
+
+echo "=== TVheadend Command Check ==="
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/which tv_grab_gracenote2epg'
+
+echo "=== TVheadend Capabilities ==="
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --capabilities'
+
+echo "=== TVheadend Lineup Test ==="
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --show-lineup --zip 92101'
+
+# Next: Configure in TVheadend EPG Grabber Modules
+echo "Next step: Configure tv_grab_gracenote2epg in TVheadend"
+echo "See: docs/tvheadend.md"
+```
 
 ## 🚀 Publishing to PyPI (For Maintainers)
 
@@ -352,7 +510,4 @@ pip install gracenote2epg[full]
 After PyPI publication, update documentation to use standard pip commands.
 
 ### Migration Notes
-See the **[Migration Guide](migration.md)** if upgrading from:
-- tv_grab_zap2epg  
-- Other XMLTV grabbers
-- Older versions of gracenote2epg
+See the **[TVheadend Guide](tvheadend.md)** if integrating with TVheadend after upgrading.

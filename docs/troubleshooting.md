@@ -44,14 +44,17 @@ python -c "import polib; print('Translations: OK')"
 # Solution 1: Install from GitHub (PyPI not yet available)
 pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
 
-# Solution 2: Use module execution
+# Solution 2: Check if installed
+pip list | grep gracenote2epg
+
+# Solution 3: Use module execution
 python -m gracenote2epg --version
 
-# Solution 3: Check if script is in PATH (for manual installations)
+# Solution 4: Check if script is in PATH (for manual installations)
 find /usr/local/bin /usr/bin ~/.local/bin -name "tv_grab_gracenote2epg" 2>/dev/null
 
-# Solution 4: Verify installation includes wrapper script
-pip show -f gracenote2epg | grep tv_grab_gracenote2epg
+# Solution 5: For Synology TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/which tv_grab_gracenote2epg'
 
 # 🔮 Future: Once PyPI is available
 # pip install gracenote2epg[full]
@@ -98,10 +101,16 @@ pip install polib
 # Solution 1: Install for user only
 pip install --user git+https://github.com/th0ma7/gracenote2epg.git[full]
 
+# Verify user installation
+pip list --user | grep gracenote2epg
+
 # Solution 2: Use virtual environment
 python3 -m venv gracenote_env
 source gracenote_env/bin/activate
 pip install git+https://github.com/th0ma7/gracenote2epg.git[full]
+
+# Verify virtual environment installation
+pip list | grep gracenote2epg
 
 # Solution 3: Fix directory permissions
 chmod 755 ~/gracenote2epg/

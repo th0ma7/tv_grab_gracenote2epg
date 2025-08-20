@@ -591,7 +591,7 @@ class ConfigManager:
         if backup_file:
             logging.warning('Backup created: %s', backup_file)
         logging.warning('Updated settings: %s', self.config_file)
-        logging.warning('Documentation: https://github.com/th0ma7/tv_grab_gracenote2epg')
+        logging.warning('Documentation: https://github.com/th0ma7/gracenote2epg')
         logging.warning('=' * 60)
 
     def _check_langdetect_available(self) -> bool:
@@ -855,7 +855,7 @@ class ConfigManager:
         print()
 
         print("📖 DOCUMENTATION:")
-        print("   https://github.com/th0ma7/tv_grab_gracenote2epg/blob/main/LINEUPID.md")
+        print("   https://github.com/th0ma7/gracenote2epg/blob/main/docs/lineup-configuration.md")
 
     def _display_debug_output(self, postal_code: str, clean_postal: str, country_name: str,
                              country: str, lineup_config: Dict):
@@ -947,7 +947,7 @@ class ConfigManager:
         print()
 
         print("📖 DOCUMENTATION:")
-        print("   https://github.com/th0ma7/tv_grab_gracenote2epg/blob/main/LINEUPID.md")
+        print("   https://github.com/th0ma7/gracenote2epg/blob/main/docs/lineup-configuration.md")
 
     def normalize_lineup_id(self, lineupid: str, country: str, postal_code: str) -> str:
         """
