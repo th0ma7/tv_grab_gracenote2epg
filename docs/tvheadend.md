@@ -7,16 +7,23 @@ This guide covers complete TVheadend integration for gracenote2epg, including mi
 ### Initial Setup
 
 1. **Access TVheadend Web Interface** (usually http://your-server:9981)
-2. **Navigate**: Configuration → Channel/EPG → EPG Grabber Modules  
+2. **Navigate**: Configuration → Channel/EPG → EPG Grabber Modules
 3. **Enable gracenote2epg**: 
-   - Find `tv_grab_gracenote2epg` in the list
+   - Find **gracenote2epg** - `Internal: XMLTV: North Amedica (tvlistings.gracenote.com using gracenote2epg)`
+   - Add your zip/postal and extra options in **Extra arguments** such as `--days 14 --postal J3B1M4`
+   - Select **Only digits** for  **Channel numbers (heuristic)**
    - Check ✅ **Enabled**
-   - Set appropriate **Interval** (recommended: every 4-12 hours)
+   - Check ✅ **Scrape credits and extra information**
+   - Check ✅ **Alter programme description to include detailed information**
 4. **Save Configuration**
+5. **Navigate**: Configuration → Channel/EPG → EPG Grabber
+6. **Set appropriate Interval
+   - Recommended: every 12 hours (default)
+7. **Save Configuration**
 
 ### TVheadend Integration Settings
 
-Configure gracenote2epg for optimal TVheadend integration:
+Configure gracenote2epg for optimal TVheadend integration.  Below is the essential parts of the default auto-generated configuration.  Note that **Extra arguments** set in **Initial Setup** above will superseed any default configuration value - alternatively you can choose to adjust the default configuration and avoid using **Extra arguments**.  Note that TVheadend specific integration parameters requires modifying the configuration file if default doesn't suit your setup.
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -52,18 +59,13 @@ Configure gracenote2epg for optimal TVheadend integration:
 
 ### Step 2: Enable gracenote2epg
 
-1. **Find `tv_grab_gracenote2epg`** in the EPG grabber list
-2. **Check ✅ Enabled**
-3. **Configure interval** (e.g., "Every 6 hours")
-4. **Save Configuration**
+1. **Find `Internal: XMLTV: North Amedica (tvlistings.gracenote.com using gracenote2epg)`** in the EPG grabber list
+2. **Check ✅ Enabled** (see **Initial setup** section above for suggested parameters)
+3. **Save Configuration**
 
 ### Step 3: Test Migration
 
-#### Option A: Wait for Next Scheduled Update
-- **Normal behavior**: TVheadend will run gracenote2epg at next scheduled interval
-- **Typical wait**: 1-6 hours depending on your interval setting
-
-#### Option B: Manual Trigger (Recommended for Testing)
+#### Manually Triggerred
 1. **Click "Re-run internal EPG grabbers"** in EPG Grabber Modules
 2. **Monitor progress** in TVheadend logs
 3. **Wait 5-15 minutes** for completion
@@ -121,7 +123,7 @@ sudo systemctl stop tvheadend
 sudo systemctl stop tvheadend
 
 # Docker container
-docker stop tvheadend_container_name
+docker stop tvheadend_container
 ```
 
 #### Step 2: Clean EPG Database and Cache
@@ -160,7 +162,7 @@ docker start tvheadend_container_name
 #### Step 4: Wait for Channel Detection
 
 - **Wait 2-5 minutes** after TVheadend startup
-- **First run detects channels only** (this is normal):
+- **First run detects channels only** (expected behavior):
 
 ```
 [INFO]:xmltv: grab took 280 seconds
@@ -201,6 +203,25 @@ docker start tvheadend_container_name
 [INFO]:epgdb:   broadcasts 15244             ← Programs saved ✅
 [INFO]:epgdb: stored (size 1887624)
 ```
+
+## 🔄 Rollback Procedures
+
+### Simple Rollback (Try First)
+
+If you need to return to your previous EPG grabber:
+
+1. **Disable gracenote2epg** in TVheadend EPG grabber modules
+2. **Enable previous grabber** (e.g., tv_grab_zap2epg)  
+3. **Wait for next EPG update** or manually trigger
+4. **Monitor logs** for successful program data
+
+### Full Rollback with Database Reset
+
+If simple rollback doesn't work:
+
+1. **Follow EPG Database Reset Procedure** (Steps 1-3 above)
+2. **Enable previous grabber** instead of gracenote2epg
+3. **Complete reset verification** (Steps 4-6)
 
 ## 📊 TVheadend-Specific Monitoring
 
@@ -278,6 +299,10 @@ If automatic matching doesn't work:
 
 ## 🔍 Advanced TVheadend Troubleshooting
 
+### `gracenote2epg` unavailable in Configuration → Channel/EPG → EPG Grabber Modules
+
+TODO TODO TODO TODO TODO TODO TODO TODO 
+
 ### No EPG Data in TVheadend Interface
 
 #### Check 1: EPG Grabber Status
@@ -288,7 +313,7 @@ grep "tv_grab_gracenote2epg" /path/to/tvheadend.log | tail -10
 
 #### Check 2: XMLTV File Content
 ```bash
-# Check if XMLTV file exists and has reasonable size
+# Check if XMLTV file exists and has reasonable size (location will vary depending of your actual setup)
 ls -lh ~/gracenote2epg/cache/xmltv.xml
 
 # Quick content check (should show programs)
@@ -303,24 +328,9 @@ head -20 ~/gracenote2epg/cache/xmltv.xml | grep -E "(generator|programme)"
 # Debug channel matching
 tv_grab_gracenote2epg --debug --console --days 1 | grep -i "channel"
 
-# Compare with TVheadend channels
+# Compare with TVheadend channels - TO FIX - TO FIX - TO FIX - TO FIX
 curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].val.name'
 ```
-
-### Performance Issues in TVheadend
-
-#### High Memory Usage During EPG Update
-```xml
-<!-- Reduce gracenote2epg resource usage -->
-<setting id="days">3</setting>              <!-- Shorter guide period -->
-<setting id="refresh">12</setting>          <!-- More aggressive caching -->
-<setting id="redays">3</setting>           <!-- Smaller cache -->
-```
-
-#### Long EPG Update Times
-1. **Check cache efficiency**: Should be 95%+ after first run
-2. **Monitor network**: WAF delays are normal and handled automatically
-3. **Verify lineup size**: Large lineups take longer
 
 ### TVheadend Authentication Issues
 
@@ -335,25 +345,6 @@ Or configure in TVheadend:
 1. **Configuration** → **Access Entries**
 2. **Add entry** for gracenote2epg access
 3. **Allow EPG grabber access** without authentication
-
-## 🔄 Rollback Procedures
-
-### Simple Rollback (Try First)
-
-If you need to return to your previous EPG grabber:
-
-1. **Disable gracenote2epg** in TVheadend EPG grabber modules
-2. **Enable previous grabber** (e.g., tv_grab_zap2epg)  
-3. **Wait for next EPG update** or manually trigger
-4. **Monitor logs** for successful program data
-
-### Full Rollback with Database Reset
-
-If simple rollback doesn't work:
-
-1. **Follow EPG Database Reset Procedure** (Steps 1-3 above)
-2. **Enable previous grabber** instead of gracenote2epg
-3. **Complete reset verification** (Steps 4-6)
 
 ## 📚 Related Documentation
 
