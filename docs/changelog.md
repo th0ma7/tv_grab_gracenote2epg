@@ -11,7 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
-## [1.4] - Current Release
+## [1.4.1] - 2025-08-20
+
+### Added
+- Complete documentation refactoring with new structure under `docs/`
+- New comprehensive TVheadend integration guide (`docs/tvheadend.md`)
+- Installation guide with platform-specific instructions
+- Development guide with technical validation procedures
+
+### Changed
+- Renamed repository from `tv_grab_gracenote2epg` to `gracenote2epg`
+- Restructured documentation: moved files to `docs/` directory
+- Renamed documentation files for clarity:
+  - `LINEUPID.md` → `docs/lineup-configuration.md`
+  - `PACKAGING.md` → `docs/development.md`
+  - `CACHE_RETENTION_POLICIES.md` → `docs/cache-retention.md`
+  - `LOG_ROTATION.md` → `docs/log-rotation.md`
+- Separated TVheadend-specific guidance from general troubleshooting
+- Updated installation instructions for GitHub-based installation (PyPI pending)
+
+### Fixed
+- Updated all documentation links to reflect new structure
+- Corrected platform-specific installation commands
+- Updated Synology installation instructions to focus on TVheadend environment
+- Updated MANIFEST.in and setup.py for new documentation structure
+
+## [1.4] - Previous Release
 ### Added
 - **Simplified Lineup Configuration**: Single `lineupid` setting replaces complex multi-parameter setup
   - Auto-detection with `lineupid=auto` for Over-the-Air (OTA) channels
