@@ -1,20 +1,24 @@
-# Core documentation (reste à la racine)
+# Core documentation (stays at root)
 include README.md
 include LICENSE
 
-# Documentation refactorisée sous docs/
+# Refactored documentation under docs/
 graft docs
 
 # Configuration
 include gracenote2epg.xml
 
-# Script wrapper ESSENTIEL
+# ESSENTIAL wrapper script
 include tv_grab_gracenote2epg
 
 # Python package
 recursive-include gracenote2epg *.py
 
-# Exclure les fichiers temporaires
+# Translation files - CORRECTION ADDED
+recursive-include gracenote2epg/locales *.po
+recursive-include gracenote2epg/locales *.pot
+
+# Exclude temporary files
 global-exclude *.pyc
 global-exclude *.pyo
 global-exclude *.pyd

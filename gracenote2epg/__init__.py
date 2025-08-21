@@ -5,7 +5,7 @@ A modular Python implementation for downloading TV guide data from
 tvlistings.gracenote.com with intelligent caching and TVheadend integration.
 """
 
-__version__ = "1.4.1"
+__version__ = "1.5"
 __author__ = "th0ma7"
 __license__ = "GPL-3.0"
 
@@ -23,23 +23,23 @@ from .gracenote2epg_dictionaries import (
     get_language_display_name,
     get_available_languages,
     get_translation_statistics,
-    reload_translations
+    reload_translations,
 )
 
 __all__ = [
-    'ArgumentParser',
-    'ConfigManager',
-    'OptimizedDownloader',
-    'LanguageDetector',
-    'GuideParser',
-    'TvheadendClient',
-    'CacheManager',
-    'TimeUtils',
-    'XmltvGenerator',
-    'get_category_translation',
-    'get_term_translation',
-    'get_language_display_name',
-    'get_available_languages',
-    'get_translation_statistics',
-    'reload_translations'
+    "ArgumentParser",
+    "ConfigManager",
+    "OptimizedDownloader",
+    "LanguageDetector",
+    "GuideParser",
+    "TvheadendClient",
+    "CacheManager",
+    "TimeUtils",
+    "XmltvGenerator",
+    "get_category_translation",
+    "get_term_translation",
+    "get_language_display_name",
+    "get_available_languages",
+    "get_translation_statistics",
+    "reload_translations",
 ]
