@@ -1,0 +1,9 @@
+# .flake8
+[flake8]
+max-line-length = 100
+extend-ignore = 
+    E203, W503, F541, F401, F841, E722, W293,
+    E501, E231, E302, E305,
+    BLK100
+exclude = 
+    build, dist, *.egg-info, __pycache__, .git, .tox
