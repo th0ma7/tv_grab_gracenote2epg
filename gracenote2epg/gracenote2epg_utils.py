@@ -9,12 +9,11 @@ import gzip
 import html
 import json
 import logging
-import os
 import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 
 
 class TimeUtils:
@@ -67,7 +66,7 @@ class CacheManager:
         # Create cache directory with proper 755 permissions (rwxr-xr-x)
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
-        except Exception as e:
+        except Exception:
             # Fallback: create without mode specification (depends on umask)
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,17 +74,17 @@ class CacheManager:
         """XMLTV: Always backup previous version"""
         try:
             if xmltv_file.exists():
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                backup_file = xmltv_file.with_suffix(f'.xml.{timestamp}')
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_file = xmltv_file.with_suffix(f".xml.{timestamp}")
 
                 shutil.copy2(xmltv_file, backup_file)
-                logging.info('XMLTV backed up: %s', backup_file.name)
+                logging.info("XMLTV backed up: %s", backup_file.name)
                 return backup_file
             else:
-                logging.info('No existing XMLTV file to backup - first run')
+                logging.info("No existing XMLTV file to backup - first run")
                 return None
         except Exception as e:
-            logging.warning('Error backing up XMLTV: %s', str(e))
+            logging.warning("Error backing up XMLTV: %s", str(e))
             return None
 
     def clean_old_xmltv_backups(self, xmltv_file: Path, retention_days: int):
@@ -99,7 +98,7 @@ class CacheManager:
 
             # Handle unlimited retention
             if retention_days == 0:
-                logging.debug('XMLTV backup retention: unlimited - no cleanup performed')
+                logging.debug("XMLTV backup retention: unlimited - no cleanup performed")
                 return
 
             # Keep backups for retention period
@@ -114,37 +113,45 @@ class CacheManager:
                     file_mtime = backup_file.stat().st_mtime
                     if file_mtime < cutoff_time:
                         backup_file.unlink()
-                        logging.debug('Deleted old XMLTV backup: %s', backup_file.name)
+                        logging.debug("Deleted old XMLTV backup: %s", backup_file.name)
                         cleaned_count += 1
                     else:
                         kept_count += 1
-                        logging.debug('Kept XMLTV backup: %s', backup_file.name)
+                        logging.debug("Kept XMLTV backup: %s", backup_file.name)
                 except OSError as e:
-                    logging.warning('Error deleting backup %s: %s', backup_file.name, str(e))
+                    logging.warning("Error deleting backup %s: %s", backup_file.name, str(e))
 
             if cleaned_count > 0 or kept_count > 0:
                 if retention_days == 1:
-                    retention_desc = '1 day'
+                    retention_desc = "1 day"
                 else:
-                    retention_desc = f'{retention_days} days'
+                    retention_desc = f"{retention_days} days"
 
-                logging.info('XMLTV backup cleanup: %d removed, %d kept (retention: %s)',
-                           cleaned_count, kept_count, retention_desc)
+                logging.info(
+                    "XMLTV backup cleanup: %d removed, %d kept (retention: %s)",
+                    cleaned_count,
+                    kept_count,
+                    retention_desc,
+                )
 
         except Exception as e:
-            logging.warning('Error cleaning XMLTV backups: %s', str(e))
+            logging.warning("Error cleaning XMLTV backups: %s", str(e))
 
     def clean_guide_cache(self, grid_time_start: float, guide_days: int):
         """Guide: Keep only blocks corresponding to target period"""
         try:
-            logging.info('Cleaning guide cache: keeping blocks for %d days', guide_days)
+            logging.info("Cleaning guide cache: keeping blocks for %d days", guide_days)
 
             # Calculate guide time range
-            guide_start_dt, guide_end_dt = TimeUtils.calculate_guide_time_range(grid_time_start, guide_days)
+            guide_start_dt, guide_end_dt = TimeUtils.calculate_guide_time_range(
+                grid_time_start, guide_days
+            )
 
-            logging.debug('Guide range: %s to %s',
-                         guide_start_dt.strftime('%Y-%m-%d %H:00'),
-                         guide_end_dt.strftime('%Y-%m-%d %H:00'))
+            logging.debug(
+                "Guide range: %s to %s",
+                guide_start_dt.strftime("%Y-%m-%d %H:00"),
+                guide_end_dt.strftime("%Y-%m-%d %H:00"),
+            )
 
             cleaned_count = 0
             kept_count = 0
@@ -155,13 +162,15 @@ class CacheManager:
                 if len(cache_file.stem) == 10:  # YYYYMMDDHH
                     try:
                         date_str = cache_file.stem  # YYYYMMDDHH
-                        file_dt = datetime.strptime(date_str, '%Y%m%d%H')
+                        file_dt = datetime.strptime(date_str, "%Y%m%d%H")
 
                         # Verify it's a valid 3h block (0,3,6,9,12,15,18,21)
                         if file_dt.hour % 3 != 0:
                             # Invalid block - remove
                             cache_file.unlink()
-                            logging.debug('Deleted invalid block: %s (hour %d)', cache_file.name, file_dt.hour)
+                            logging.debug(
+                                "Deleted invalid block: %s (hour %d)", cache_file.name, file_dt.hour
+                            )
                             invalid_count += 1
                             continue
 
@@ -169,25 +178,29 @@ class CacheManager:
                         if guide_start_dt <= file_dt < guide_end_dt:
                             # Keep
                             kept_count += 1
-                            logging.debug('Keeping: %s', cache_file.name)
+                            logging.debug("Keeping: %s", cache_file.name)
                         else:
                             # Remove - outside range
                             cache_file.unlink()
-                            logging.debug('Deleted out of range: %s', cache_file.name)
+                            logging.debug("Deleted out of range: %s", cache_file.name)
                             cleaned_count += 1
 
                     except (ValueError, OSError) as e:
-                        logging.warning('Error processing block %s: %s', cache_file.name, str(e))
+                        logging.warning("Error processing block %s: %s", cache_file.name, str(e))
 
             total_processed = cleaned_count + kept_count + invalid_count
             if total_processed > 0:
-                logging.info('Guide cache cleanup: %d removed, %d kept, %d invalid blocks removed',
-                            cleaned_count, kept_count, invalid_count)
+                logging.info(
+                    "Guide cache cleanup: %d removed, %d kept, %d invalid blocks removed",
+                    cleaned_count,
+                    kept_count,
+                    invalid_count,
+                )
             else:
-                logging.info('No guide cache files found to process')
+                logging.info("No guide cache files found to process")
 
         except Exception as e:
-            logging.warning('Error cleaning guide cache: %s', str(e))
+            logging.warning("Error cleaning guide cache: %s", str(e))
 
     def clean_show_cache(self, active_series_list: Optional[List[str]] = None):
         """Show details: Keep only those still active in current xmltv.xml"""
@@ -203,25 +216,27 @@ class CacheManager:
 
             # Process show detail files (not guide blocks)
             for cache_file in self.cache_dir.glob("*.json"):
-                if not cache_file.name.endswith('.json.gz'):  # Exclude compressed guide blocks
+                if not cache_file.name.endswith(".json.gz"):  # Exclude compressed guide blocks
                     series_id = cache_file.stem  # filename without .json
 
                     if series_id in active_series:
                         kept_count += 1
-                        logging.debug('Show details kept: %s', series_id)
+                        logging.debug("Show details kept: %s", series_id)
                     else:
                         try:
                             cache_file.unlink()
-                            logging.debug('Show details removed: %s', series_id)
+                            logging.debug("Show details removed: %s", series_id)
                             cleaned_count += 1
                         except OSError as e:
-                            logging.warning('Error removing show details %s: %s', cache_file.name, str(e))
+                            logging.warning(
+                                "Error removing show details %s: %s", cache_file.name, str(e)
+                            )
 
             if cleaned_count > 0 or kept_count > 0:
-                logging.info('Show cache cleanup: %d removed, %d kept', cleaned_count, kept_count)
+                logging.info("Show cache cleanup: %d removed, %d kept", cleaned_count, kept_count)
 
         except Exception as e:
-            logging.warning('Error cleaning show cache: %s', str(e))
+            logging.warning("Error cleaning show cache: %s", str(e))
 
     def save_guide_block(self, filename: str, data: bytes) -> bool:
         """Save compressed guide block data"""
@@ -231,7 +246,7 @@ class CacheManager:
                 f.write(data)
             return True
         except Exception as e:
-            logging.warning('Error saving guide block %s: %s', filename, str(e))
+            logging.warning("Error saving guide block %s: %s", filename, str(e))
             return False
 
     def load_guide_block(self, filename: str) -> Optional[bytes]:
@@ -239,10 +254,10 @@ class CacheManager:
         try:
             file_path = self.cache_dir / filename
             if file_path.exists():
-                with gzip.open(file_path, 'rb') as f:
+                with gzip.open(file_path, "rb") as f:
                     return f.read()
         except Exception as e:
-            logging.warning('Error loading guide block %s: %s', filename, str(e))
+            logging.warning("Error loading guide block %s: %s", filename, str(e))
         return None
 
     def save_series_details(self, series_id: str, data: bytes) -> bool:
@@ -253,7 +268,7 @@ class CacheManager:
                 f.write(data)
             return True
         except Exception as e:
-            logging.warning('Error saving series details %s: %s', series_id, str(e))
+            logging.warning("Error saving series details %s: %s", series_id, str(e))
             return False
 
     def load_series_details(self, series_id: str) -> Optional[Dict]:
@@ -261,16 +276,16 @@ class CacheManager:
         try:
             file_path = self.cache_dir / f"{series_id}.json"
             if file_path.exists() and file_path.stat().st_size > 0:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     return json.loads(f.read())
         except (json.JSONDecodeError, OSError) as e:
-            logging.warning('Error loading series details %s: %s', series_id, str(e))
+            logging.warning("Error loading series details %s: %s", series_id, str(e))
             # Remove corrupted file
             try:
                 file_path = self.cache_dir / f"{series_id}.json"
                 if file_path.exists():
                     file_path.unlink()
-            except:
+            except Exception:
                 pass
         return None
 
@@ -284,14 +299,15 @@ class CacheManager:
             return self.save_guide_block(filename, content)
 
         except json.JSONDecodeError:
-            logging.warning('Invalid JSON received for %s', filename)
+            logging.warning("Invalid JSON received for %s", filename)
             return False
         except Exception as e:
-            logging.warning('Error validating/saving %s: %s', filename, str(e))
+            logging.warning("Error validating/saving %s: %s", filename, str(e))
             return False
 
-    def download_guide_block_safe(self, downloader, grid_time: float, filename: str,
-                                  url: str, refresh_hours: int = 48) -> bool:
+    def download_guide_block_safe(
+        self, downloader, grid_time: float, filename: str, url: str, refresh_hours: int = 48
+    ) -> bool:
         """Safe download of guide block with automatic backup"""
         file_path = self.cache_dir / filename
         file_exists = file_path.exists()
@@ -306,56 +322,57 @@ class CacheManager:
 
         if not file_exists:
             # New block to download
-            logging.info('Downloading new block: %s', block_display)
-            content = downloader.download_with_retry(url, method='GET', timeout=8)
+            logging.info("Downloading new block: %s", block_display)
+            content = downloader.download_with_retry(url, method="GET", timeout=8)
 
             if content and self.validate_and_save_guide_block(content, filename):
-                logging.info('  Success: %s (%d bytes)', filename, len(content))
+                logging.info("  Success: %s (%d bytes)", filename, len(content))
                 return True
             else:
-                logging.warning('  Failed download: %s', filename)
+                logging.warning("  Failed download: %s", filename)
                 return False
 
         elif force_refresh:
             # Existing block to refresh
-            logging.info('Refreshing block: %s [REFRESH]', block_display)
+            logging.info("Refreshing block: %s [REFRESH]", block_display)
 
             # Create temporary backup
-            backup_file = file_path.with_suffix('.backup_temp')
+            backup_file = file_path.with_suffix(".backup_temp")
             try:
                 shutil.copy2(file_path, backup_file)
-                logging.debug('  Backup created: %s', backup_file.name)
+                logging.debug("  Backup created: %s", backup_file.name)
             except Exception as e:
-                logging.warning('  Cannot create backup: %s', str(e))
+                logging.warning("  Cannot create backup: %s", str(e))
                 backup_file = None
 
             # Download new version
-            content = downloader.download_with_retry(url, method='GET', timeout=8)
+            content = downloader.download_with_retry(url, method="GET", timeout=8)
 
             if content and self.validate_and_save_guide_block(content, filename):
                 # Success - remove backup
                 if backup_file and backup_file.exists():
                     backup_file.unlink()
-                logging.info('  Refresh success: %s (%d bytes)', filename, len(content))
+                logging.info("  Refresh success: %s (%d bytes)", filename, len(content))
                 return True
             else:
                 # Failed - restore backup
                 if backup_file and backup_file.exists():
                     shutil.move(str(backup_file), str(file_path))
-                    logging.info('  Backup restored after failed refresh: %s', filename)
+                    logging.info("  Backup restored after failed refresh: %s", filename)
                     return True  # We still have the file
                 else:
-                    logging.warning('  Refresh failed and no backup: %s', filename)
+                    logging.warning("  Refresh failed and no backup: %s", filename)
                     return False
         else:
             # Use cached version
-            logging.debug('Using cached: %s', block_display)
+            logging.debug("Using cached: %s", block_display)
             return True
 
-    def perform_initial_cleanup(self, grid_time_start: float, guide_days: int, xmltv_file: Path,
-                              xmltv_retention_days: int):
+    def perform_initial_cleanup(
+        self, grid_time_start: float, guide_days: int, xmltv_file: Path, xmltv_retention_days: int
+    ):
         """Perform initial cache cleanup with unified retention policy"""
-        logging.info('=== Initial Cache Cleanup ===')
+        logging.info("=== Initial Cache Cleanup ===")
 
         # 1. Clean guide cache - keep only blocks for target period
         self.clean_guide_cache(grid_time_start, guide_days)
@@ -363,19 +380,23 @@ class CacheManager:
         # 2. Clean XMLTV backups using unified retention policy
         self.clean_old_xmltv_backups(xmltv_file, xmltv_retention_days)
 
-        logging.info('Initial cache cleanup completed (show cache will be cleaned after parsing episodes)')
+        logging.info(
+            "Initial cache cleanup completed (show cache will be cleaned after parsing episodes)"
+        )
 
     def perform_show_cleanup(self, active_series: List[str]):
         """Clean show cache after episodes are parsed"""
-        logging.info('=== Show Cache Cleanup ===')
+        logging.info("=== Show Cache Cleanup ===")
 
         if active_series:
-            logging.info('Found %d active series in current schedule', len(active_series))
+            logging.info("Found %d active series in current schedule", len(active_series))
             self.clean_show_cache(active_series)
         else:
-            logging.warning('No active series found - skipping show cache cleanup to preserve existing cache')
+            logging.warning(
+                "No active series found - skipping show cache cleanup to preserve existing cache"
+            )
 
-        logging.info('Show cache cleanup completed')
+        logging.info("Show cache cleanup completed")
 
 
 class HtmlUtils:
@@ -394,10 +415,10 @@ class HtmlUtils:
         except Exception:
             pass
 
-        data = data.replace('&', '&amp;')     # & -> &amp;
-        data = data.replace('"', '&quot;')    # " -> &quot;
-        data = data.replace("'", '&apos;')    # ' -> &apos;
-        data = data.replace('<', '&lt;')      # < -> &lt;
-        data = data.replace('>', '&gt;')      # > -> &gt;
+        data = data.replace("&", "&amp;")  # & -> &amp;
+        data = data.replace('"', "&quot;")  # " -> &quot;
+        data = data.replace("'", "&apos;")  # ' -> &apos;
+        data = data.replace("<", "&lt;")  # < -> &lt;
+        data = data.replace(">", "&gt;")  # > -> &gt;
 
         return data

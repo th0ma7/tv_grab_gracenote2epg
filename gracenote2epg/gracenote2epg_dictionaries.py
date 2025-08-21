@@ -14,10 +14,11 @@ from typing import Dict, List, Optional
 # Try to import polib for .po file support
 try:
     import polib
+
     POLIB_AVAILABLE = True
 except ImportError:
     POLIB_AVAILABLE = False
-    logging.warning('polib not available - install with: pip install polib')
+    logging.warning("polib not available - install with: pip install polib")
 
 
 class TranslationManager:
@@ -33,8 +34,8 @@ class TranslationManager:
         """
         self.locales_dir = locales_dir or self._get_default_locales_dir()
         self.translations: Dict[str, Dict[str, str]] = {}
-        self.available_languages = ['en', 'fr', 'es']
-        self.fallback_language = 'en'
+        self.available_languages = ["en", "fr", "es"]
+        self.fallback_language = "en"
 
         # Load all available translations
         self._load_translations()
@@ -43,23 +44,23 @@ class TranslationManager:
         """Get default locales directory relative to this module"""
         # Locales directory in the same package
         package_dir = Path(__file__).parent
-        return package_dir / 'locales'
+        return package_dir / "locales"
 
     def _load_translations(self):
         """Load all .po files from locales directory"""
         if not POLIB_AVAILABLE:
-            logging.warning('polib not available - translations disabled')
+            logging.warning("polib not available - translations disabled")
             return
 
         if not self.locales_dir.exists():
-            logging.warning('Locales directory not found: %s', self.locales_dir)
+            logging.warning("Locales directory not found: %s", self.locales_dir)
             return
 
         for lang_code in self.available_languages:
             if lang_code == self.fallback_language:
                 continue  # Skip English as it's the source language
 
-            po_file = self.locales_dir / lang_code / 'LC_MESSAGES' / 'gracenote2epg.po'
+            po_file = self.locales_dir / lang_code / "LC_MESSAGES" / "gracenote2epg.po"
 
             if po_file.exists():
                 try:
@@ -74,19 +75,24 @@ class TranslationManager:
                             lang_translations[normalized_key] = entry.msgstr
 
                     self.translations[lang_code] = lang_translations
-                    logging.debug('Loaded %d translations for %s', len(lang_translations), lang_code)
+                    logging.debug(
+                        "Loaded %d translations for %s", len(lang_translations), lang_code
+                    )
 
                 except Exception as e:
-                    logging.warning('Error loading %s translations: %s', lang_code, e)
+                    logging.warning("Error loading %s translations: %s", lang_code, e)
             else:
-                logging.debug('Translation file not found: %s', po_file)
+                logging.debug("Translation file not found: %s", po_file)
 
         # Log summary
         total_loaded = sum(len(trans) for trans in self.translations.values())
-        logging.info('Translation system initialized: %d languages, %d total translations',
-                    len(self.translations), total_loaded)
+        logging.info(
+            "Translation system initialized: %d languages, %d total translations",
+            len(self.translations),
+            total_loaded,
+        )
 
-    def translate(self, text: str, target_language: str, context: str = 'general') -> str:
+    def translate(self, text: str, target_language: str, context: str = "general") -> str:
         """
         Translate text to target language with proper case handling
 
@@ -105,7 +111,7 @@ class TranslationManager:
         # Return original if English or no translations available
         if target_language == self.fallback_language or not self.translations.get(target_language):
             # Apply English title case for categories
-            if context == 'category' and target_language == 'en':
+            if context == "category" and target_language == "en":
                 return text.title()
             return text
 
@@ -114,7 +120,7 @@ class TranslationManager:
         normalized_text = html.unescape(text).lower().strip()
 
         # Remove common prefixes
-        if normalized_text.startswith('filter-'):
+        if normalized_text.startswith("filter-"):
             normalized_text = normalized_text[7:]
 
         # Look up translation
@@ -123,19 +129,19 @@ class TranslationManager:
 
         if translated:
             # Apply case transformation based on context and target language
-            if context == 'category':
-                if target_language in ['fr', 'es']:
+            if context == "category":
+                if target_language in ["fr", "es"]:
                     # French/Spanish: sentence case (première lettre majuscule seulement)
                     return translated.capitalize()
-                elif target_language == 'en':
+                elif target_language == "en":
                     # English: title case
                     return translated.title()
 
-            elif context == 'term':
+            elif context == "term":
                 # Status terms: keep uppercase
                 return translated.upper()
 
-            elif context == 'language':
+            elif context == "language":
                 # Language names: title case
                 return translated.title()
 
@@ -143,10 +149,10 @@ class TranslationManager:
         else:
             logging.debug('No translation found for "%s" in %s', text, target_language)
             # Apply proper case even for untranslated text
-            if context == 'category':
-                if target_language in ['fr', 'es']:
+            if context == "category":
+                if target_language in ["fr", "es"]:
                     return text.capitalize()
-                elif target_language == 'en':
+                elif target_language == "en":
                     return text.title()
             return text
 
@@ -154,7 +160,7 @@ class TranslationManager:
         """Get list of supported language codes"""
         return self.available_languages.copy()
 
-    def get_language_display_name(self, language_code: str, display_language: str = 'en') -> str:
+    def get_language_display_name(self, language_code: str, display_language: str = "en") -> str:
         """
         Get language display name in target language with proper case handling
 
@@ -166,14 +172,10 @@ class TranslationManager:
             Language display name
         """
         # Language names as translatable strings
-        language_names = {
-            'en': 'English',
-            'fr': 'French',
-            'es': 'Spanish'
-        }
+        language_names = {"en": "English", "fr": "French", "es": "Spanish"}
 
         base_name = language_names.get(language_code, language_code.upper())
-        return self.translate(base_name, display_language, 'language')
+        return self.translate(base_name, display_language, "language")
 
     def get_statistics(self) -> Dict[str, int]:
         """Get translation statistics"""
@@ -207,7 +209,7 @@ def get_category_translation(category: str, target_language: str) -> str:
         Translated category name or original if translation not found
     """
     manager = get_translation_manager()
-    return manager.translate(category, target_language, 'category')
+    return manager.translate(category, target_language, "category")
 
 
 def get_term_translation(term: str, target_language: str) -> str:
@@ -222,10 +224,10 @@ def get_term_translation(term: str, target_language: str) -> str:
         Translated term or original if translation not found
     """
     manager = get_translation_manager()
-    return manager.translate(term, target_language, 'term')
+    return manager.translate(term, target_language, "term")
 
 
-def get_language_display_name(language_code: str, display_language: str = 'en') -> str:
+def get_language_display_name(language_code: str, display_language: str = "en") -> str:
     """
     Get language display name in target language using .po files with proper case handling
 

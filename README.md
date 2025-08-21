@@ -78,6 +78,7 @@ The script auto-creates a configuration file on first run. Basic setup:
 - **[Cache & Retention Policies](docs/cache-retention.md)** - Managing cache and log retention
 - **[Log Rotation](docs/log-rotation.md)** - Built-in log rotation system
 - **[Development](docs/development.md)** - Contributing, testing, XMLTV validation, and development setup
+- **[Development Scripts](scripts/README.md)** - Utility scripts for testing and distribution
 
 ## 🆘 Need Help?
 

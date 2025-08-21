@@ -5,11 +5,76 @@ All notable changes to gracenote2epg will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5] - Planned
-### TODO
+## [Future Development] - TBD
+### Planned Features
 - **IMDB**: Add IMDB support
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
+
+## [1.5] - 2025-08-21
+
+### Added
+- **Development Scripts**: Comprehensive development workflow automation
+  - New `scripts/dev-helper.bash` - Development workflow assistant with autofix, format, lint commands
+  - New `scripts/test-distribution.bash` - Automated distribution testing and validation
+  - Complete `scripts/README.md` documentation with usage examples and troubleshooting
+- **Makefile Integration**: Root-level Makefile for convenient development task automation
+  - `make all` - Complete development workflow (clean, autofix, format, lint, test)
+  - `make autofix` - Auto-fix imports and common code issues with autoflake
+  - `make format` - Code formatting with black (100-character line length)
+  - `make lint` - Code linting with flake8 (permissive configuration)
+  - `make test-basic` / `make test-full` - Distribution testing shortcuts
+  - `make check-deps` - Development dependency validation
+- **Code Quality Tools**: Automated code formatting and linting pipeline
+  - **autoflake** integration for automatic import cleanup and unused variable removal
+  - **black** formatting with 100-character line length for better readability
+  - **flake8** linting with project-specific configuration (`.flake8`)
+  - Smart dependency detection (handles Ubuntu apt packages vs pip packages)
+- **Enhanced Development Documentation**: Complete development workflow documentation
+  - Updated `docs/development.md` with Ubuntu/Debian-specific installation instructions
+  - Development tools troubleshooting (flake8-black conflicts, mixed installations)
+  - Clear separation between Makefile (primary interface) and scripts (advanced usage)
+  - Progressive disclosure: simple commands first, detailed options in scripts documentation
+
+### Changed
+- **Version Management**: Centralized version system with single source of truth
+  - Version now managed exclusively in `gracenote2epg/__init__.py`
+  - `setup.py` automatically reads version from `__init__.py` (eliminates version drift)
+  - Simplified release process requires updating only one file
+- **Code Standards**: Project-wide code quality improvements
+  - All Python code now black-formatted with 100-character line length
+  - flake8-compliant with permissive configuration for development workflow
+  - Automated removal of unused imports and variables across codebase
+  - Consistent code style throughout the project
+- **Documentation Structure**: Improved documentation hierarchy and organization
+  - `docs/development.md` focuses on concepts, workflow, and Makefile usage
+  - `scripts/README.md` contains detailed technical documentation for direct script usage
+  - Clear guidance on when to use Makefile vs direct script invocation
+  - Project structure documentation now includes Makefile
+- **Development Workflow**: Streamlined development process
+  - `make all` provides complete validation pipeline for commits
+  - Safe auto-fixing that preserves valid f-strings and important code patterns
+  - Integration between system packages (Ubuntu apt) and pip packages
+  - Better error messages and conflict detection for development tools
+
+### Fixed
+- **Distribution Packaging**: Resolved locale files missing from distributions (carried over from v1.4.x issues)
+  - Translation `.po` files now correctly included in both wheel and source distributions
+  - `MANIFEST.in` properly configured to include `locales/` directory
+  - Distribution testing scripts validate locale file inclusion automatically
+  - Fixes translation system functionality in installed packages
+- **Development Environment Issues**: Comprehensive development setup improvements
+  - Automatic detection and warning for problematic packages (e.g., `flake8-black`)
+  - Clear installation instructions for Ubuntu/Debian vs pip-only environments
+  - Resolved BLK100 errors caused by flake8-black plugin conflicts
+  - Better handling of mixed system/pip package installations
+
+### Developer Experience
+- **Simplified Onboarding**: New developers can start with `make all`
+- **Automated Quality**: Code quality checks happen automatically before commits
+- **Clear Documentation**: Progressive disclosure from simple commands to advanced options
+- **Platform Support**: Tested on Ubuntu 22.04/24.04 with both apt and pip packages
+- **CI/CD Ready**: Scripts designed for integration with GitHub Actions and other CI systems
 
 ## [1.4.1] - 2025-08-20
 

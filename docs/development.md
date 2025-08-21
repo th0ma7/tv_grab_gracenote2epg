@@ -19,6 +19,59 @@ source gracenote_dev/bin/activate  # Linux/Mac
 # gracenote_dev\Scripts\activate   # Windows
 ```
 
+### Development Dependencies
+
+#### Core Development Tools
+
+The following tools are required for development:
+
+- **Python 3.7+** - Core language
+- **build** - Package building
+- **black** - Code formatting
+- **flake8** - Code linting  
+- **autoflake** - Automatic import/variable cleanup
+- **twine** - PyPI publishing (optional)
+
+#### Installation Methods
+
+**Ubuntu/Debian (Recommended):**
+```bash
+# Install system packages (recommended for Ubuntu/Debian)
+sudo apt update
+sudo apt install python3-pip python3-build black flake8
+
+# Install remaining tools via pip
+pip install autoflake twine
+```
+
+**Using pip only:**
+```bash
+# Install all tools via pip
+pip install build black flake8 autoflake twine
+```
+
+**Development install (includes everything):**
+```bash
+# Install package in development mode with all dependencies
+pip install -e .[dev]
+```
+
+#### Tools to AVOID
+
+⚠️ **Do NOT install these packages** - they can cause conflicts:
+
+- `flake8-black` - Causes BLK100 errors and conflicts with our workflow
+- `pylint` - Different standards than our flake8 configuration
+
+#### Verification
+
+```bash
+# Check tools availability
+make check-deps
+# or
+./scripts/dev-helper.bash check-deps
+```
+
 ### Installation for Development
 
 ```bash
@@ -29,23 +82,9 @@ cd gracenote2epg
 # Install in editable mode with all features
 pip install -e .[dev]
 
-# Or install dependencies manually
+# Or install dependencies manually (see Prerequisites section above)
 pip install -e .
-pip install langdetect polib pytest flake8 black mypy
-```
-
-### Development Dependencies
-
-```python
-# setup.py extras_require['dev']
-'dev': [
-    'langdetect>=1.0.9',      # Language detection
-    'polib>=1.1.0',           # Translations
-    'pytest>=6.0',            # Testing framework
-    'flake8>=3.8',            # Code linting
-    'black>=21.0',            # Code formatting
-    'mypy>=0.910',            # Type checking
-],
+pip install langdetect polib pytest flake8 black mypy autoflake
 ```
 
 ## Project Structure
@@ -53,19 +92,68 @@ pip install langdetect polib pytest flake8 black mypy
 ```
 gracenote2epg/
 ├── gracenote2epg/           # Main package
-│   ├── __init__.py
+│   ├── __init__.py          # Package version and exports
 │   ├── __main__.py          # Entry point for -m execution
-│   ├── core.py              # Core grabber logic
-│   ├── config.py            # Configuration handling
-│   ├── cache.py             # Cache management
-│   └── utils.py             # Utility functions
+│   ├── gracenote2epg_*.py   # Core modules
+│   └── locales/             # Translation files
 ├── tv_grab_gracenote2epg    # XMLTV wrapper script
 ├── gracenote2epg.xml        # Default configuration template
+├── Makefile                 # Development task automation
 ├── docs/                    # Documentation
+├── scripts/                 # Development and testing scripts
+│   ├── dev-helper.bash      # Development workflow assistant
+│   ├── test-distribution.bash # Distribution testing
+│   └── README.md            # Scripts documentation
 ├── tests/                   # Test suite (if present)
 ├── setup.py                 # Package setup
 ├── MANIFEST.in              # Distribution file manifest
 └── README.md                # Main documentation
+```
+
+## Development Workflow
+
+### Makefile - Primary Interface
+
+The project provides a `Makefile` at the root for convenient development task automation:
+
+```bash
+# Quick development tasks
+make clean               # Clean all artifacts
+make autofix             # Auto-fix imports and common issues
+make format              # Format code with black  
+make lint                # Run linting
+make test-basic          # Quick test
+make test-full           # Full test (alias: make test)
+
+# Build and install
+make build               # Build distributions
+make install-dev         # Development installation
+make check-deps          # Check dependencies
+
+# Complete workflow
+make all                 # Run clean, autofix, format, lint, and test-full
+```
+
+### Development Scripts
+
+The Makefile is a wrapper around development scripts located in `scripts/`:
+
+- **`dev-helper.bash`** - Development workflow assistant
+- **`test-distribution.bash`** - Distribution testing and validation
+
+**See [Development Scripts README](../scripts/README.md)** for complete documentation of individual scripts, their options, and direct usage.
+
+### Recommended Workflow
+
+```bash
+# Daily development cycle
+make clean autofix format lint test-basic
+
+# Before committing
+make all
+
+# Quick fixes
+make autofix format
 ```
 
 ## Code Quality and Standards
@@ -88,9 +176,9 @@ flake8 gracenote2epg/ tv_grab_gracenote2epg
 
 # Configuration in setup.cfg or .flake8
 [flake8]
-max-line-length = 88
-extend-ignore = E203, W503
-exclude = build,dist,*.egg-info
+max-line-length = 100
+extend-ignore = E203,W503,F541,F401,F841,E722,W293
+exclude = build,dist,*.egg-info,__pycache__
 ```
 
 ### Type Checking
@@ -108,6 +196,33 @@ disallow_untyped_defs = True
 ```
 
 ## Testing and Validation
+
+### Automated Testing with Scripts
+
+The project includes comprehensive testing automation via the Makefile:
+
+```bash
+# Quick functionality test
+make test-basic
+
+# Full distribution test (recommended before commits)
+make test-full  # or just: make test
+
+# Complete development workflow
+make all  # clean, autofix, format, lint, test-full
+```
+
+**For detailed script options and direct usage**, see [Development Scripts README](../scripts/README.md).
+
+### Before Committing
+
+```bash
+# Recommended: Complete workflow
+make all
+
+# Or step by step:
+make clean autofix format lint test-basic
+```
 
 ### Unit Tests
 
@@ -199,9 +314,59 @@ time ./tv_grab_gracenote2epg --days 1 --zip 92101
 /usr/bin/time -v ./tv_grab_gracenote2epg --days 1 --zip 92101
 ```
 
+## Version Management
+
+### Single Source of Truth
+
+The project uses a centralized version management system:
+
+- **Version location**: `gracenote2epg/__init__.py`
+- **Format**: `__version__ = "1.4.2"`
+- **Auto-discovery**: `setup.py` automatically reads version from `__init__.py`
+
+### Updating Version
+
+```bash
+# Only update the version in one place:
+# gracenote2epg/__init__.py
+
+# Example:
+__version__ = "1.5.0"
+
+# setup.py will automatically pick up the new version
+```
+
+### Version Validation
+
+```bash
+# Verify version consistency
+python3 -c "
+import gracenote2epg
+print('Package version:', gracenote2epg.__version__)
+"
+
+# Check setup.py version detection
+python3 setup.py --version
+```
+
 ## Building and Distribution
 
-### Building Source Distribution
+### Automated Building and Testing
+
+```bash
+# Build and test distributions automatically
+make test-full
+
+# Or build distributions only
+make build
+
+# Complete workflow (recommended)
+make all
+```
+
+**For advanced script options and troubleshooting**, see [Development Scripts README](../scripts/README.md).
+
+### Manual Building
 
 ```bash
 # Install build tools
@@ -293,10 +458,59 @@ python -c "import gracenote2epg; print('OK')"
 ```bash
 # Test configuration parsing
 python -c "
-from gracenote2epg.config import Config
-config = Config()
+from gracenote2epg.gracenote2epg_config import ConfigManager
+config = ConfigManager()
 print('Configuration loaded successfully')
 "
+```
+
+#### Distribution Issues
+```bash
+# Debug packaging problems
+./scripts/test-distribution.bash --clean-only
+python3 -m build --verbose
+
+# Check locale files inclusion
+python3 -m zipfile -l dist/*.whl | grep locales
+```
+
+#### Development Tools Issues
+
+**flake8-black conflicts:**
+If you see `BLK100` errors during linting:
+```bash
+# Remove the conflicting plugin
+pip uninstall flake8-black
+
+# Check what's installed
+pip list | grep flake8
+```
+
+The `flake8-black` plugin is **not needed** for this project and causes conflicts.
+
+**Mixed system/pip installations:**
+The scripts handle mixed installations (Ubuntu apt + pip) gracefully:
+```bash
+# Check what you have installed
+./scripts/dev-helper.bash check-deps
+
+# Typical Ubuntu setup (recommended):
+# - black, flake8: via apt
+# - autoflake, build, twine: via pip
+```
+
+**Tool version conflicts:**
+If you encounter tool conflicts:
+```bash
+# Option 1: Use virtual environment
+python3 -m venv dev-env
+source dev-env/bin/activate
+pip install -e .[dev]
+
+# Option 2: Check tool versions
+black --version        # Should be 20.8b1+
+flake8 --version       # Should be 3.8.0+
+autoflake --version    # Should be 1.4+
 ```
 
 ## Contributing Guidelines
@@ -304,7 +518,7 @@ print('Configuration loaded successfully')
 ### Code Style
 
 - **Follow PEP 8** with Black formatting
-- **Line length**: 88 characters (Black default)
+- **Line length**: 100 characters (increased from 88 for readability)
 - **Type hints**: Required for new code
 - **Docstrings**: Use Google style docstrings
 
@@ -325,15 +539,17 @@ chore: maintenance
 
 1. **Fork repository** and create feature branch
 2. **Make changes** with appropriate tests
-3. **Run quality checks**: `black`, `flake8`, `mypy`, `pytest`
-4. **Update documentation** if needed
-5. **Submit pull request** with clear description
+3. **Run quality checks**: `make autofix format lint`
+4. **Test distributions**: `./scripts/test-distribution.bash`
+5. **Update documentation** if needed
+6. **Submit pull request** with clear description
 
 ### Testing Requirements
 
 - **Unit tests** for new functionality
 - **Integration tests** for major features
 - **XMLTV validation** for output changes
+- **Distribution testing** with provided scripts
 - **Performance testing** for cache/network changes
 
 ## Architecture Notes
@@ -345,6 +561,7 @@ chore: maintenance
 - **Download Engine**: WAF-aware with retry logic
 - **XMLTV Generator**: Standards-compliant output
 - **TVheadend Integration**: Optional channel filtering
+- **Translation System**: Multi-language support with .po files
 
 ### Design Principles
 
@@ -353,30 +570,42 @@ chore: maintenance
 - **Intelligent caching** for 95%+ cache efficiency
 - **Robust error handling** with automatic retries
 - **Platform agnostic** auto-detection
+- **Single source of truth** for version management
 
 ## Release Process
 
-### Version Management
+### Pre-Release Checklist
+
+1. **Update version** in `gracenote2epg/__init__.py` only
+2. **Run full test suite** including distribution tests
+   ```bash
+   make all
+   ```
+3. **Update CHANGELOG.md** with new features/fixes
+4. **Update documentation** if needed
+
+### Release Steps
 
 ```bash
-# Update version in setup.py
-version='1.5'
+# 1. Verify version is updated in __init__.py
+grep "__version__" gracenote2epg/__init__.py
 
-# Tag release
-git tag -a v1.5 -m "Release version 1.5"
-git push origin v1.5
+# 2. Build and test distributions
+make all
+
+# 3. Create Git tag
+git tag -a v$(python3 -c "import gracenote2epg; print(gracenote2epg.__version__)") -m "Release version $(python3 -c "import gracenote2epg; print(gracenote2epg.__version__)")"
+git push origin v$(python3 -c "import gracenote2epg; print(gracenote2epg.__version__)")
+
+# 4. Upload to PyPI
+python -m twine upload dist/*
 ```
 
-### Release Checklist
+### Post-Release
 
-1. **Update CHANGELOG.md** with new features/fixes
-2. **Run full test suite** including integration tests
-3. **Update version number** in setup.py
-4. **Build distributions** and test installation
-5. **Update documentation** if needed
-6. **Create Git tag** and push
-7. **Upload to PyPI** after final testing
-8. **Update installation instructions** in documentation
+1. **Update installation instructions** in documentation
+2. **Verify PyPI publication**
+3. **Update README.md** PyPI status if this is the first publication
 
 ## Getting Help
 
@@ -384,6 +613,7 @@ git push origin v1.5
 
 - **[GitHub Issues](https://github.com/th0ma7/gracenote2epg/issues)** - Bug reports and feature requests
 - **[GitHub Discussions](https://github.com/th0ma7/gracenote2epg/discussions)** - Development questions
+- **[Development Scripts](../scripts/README.md)** - Testing and distribution tools
 - **Code Review** - Submit pull requests for feedback
 
 ### Resources

@@ -8,7 +8,7 @@ without installation. It follows XMLTV naming conventions for grabber scripts.
 Usage:
   # From source directory (no installation needed)
   ./tv_grab_gracenote2epg --capabilities
-  
+
   # After pip install, both commands work:
   gracenote2epg --version
   tv_grab_gracenote2epg --version
@@ -19,7 +19,7 @@ from pathlib import Path
 
 # Add the package directory to sys.path if running from source
 script_dir = Path(__file__).parent
-package_dir = script_dir / 'gracenote2epg'
+package_dir = script_dir / "gracenote2epg"
 
 if package_dir.exists():
     # Running from source distribution
@@ -31,8 +31,11 @@ else:
         from gracenote2epg.__main__ import main
     except ImportError:
         print("Error: gracenote2epg package not found.", file=sys.stderr)
-        print("Please install gracenote2epg or run from the source directory.", file=sys.stderr)
+        print(
+            "Please install gracenote2epg or run from the source directory.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
