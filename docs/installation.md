@@ -1,34 +1,45 @@
 # Installation Guide
 
-> **⚠️ Important**: gracenote2epg is not yet published on PyPI. Currently available installation methods are from source only.
-
 This guide covers all installation methods for gracenote2epg on different platforms.
 
-## 📦 Publication Status
+## 📦 Installation Methods
 
-- **✅ GitHub**: Available for source installation
-- **⏳ PyPI**: Publication pending
-- **🔮 Future**: `pip install gracenote2epg[full]` will be available once published
-
-## Installation Methods
-
-> **📝 Note**: Installation commands use PEP 508 syntax.
-
-### Method 1: Install from GitHub (Recommended)
+### Method 1: Install from PyPI (Recommended)
 
 #### With Full Features
 ```bash
-# Install directly from GitHub with all features (latest version) - Modern PEP 508 syntax
+# Install with all features (recommended)
+pip install gracenote2epg[full]
+
+# Basic installation (core features only)
+pip install gracenote2epg
+
+# Feature-specific installation
+pip install gracenote2epg[langdetect]    # Language detection only
+pip install gracenote2epg[translations]  # Translation support only
+```
+
+### Method 2: Install from GitHub (Alternative)
+
+#### Latest Stable Release
+```bash
+# Install latest stable release from GitHub - PEP 508 syntax
 pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
 
-# Basic installation from GitHub (latest)
+# Basic installation from GitHub
 pip install "gracenote2epg @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
 ```
 
-### Method 2: Clone and Install
+#### Latest Development Version
+```bash
+# Install latest development version - PEP 508 syntax
+pip install "gracenote2epg[dev] @ git+https://github.com/th0ma7/gracenote2epg.git"
+```
+
+### Method 3: Clone and Install (Development)
 ```bash
 # Clone repository and install (latest version)
-git clone --branch v1.5 https://github.com/th0ma7/gracenote2epg.git
+git clone https://github.com/th0ma7/gracenote2epg.git
 cd gracenote2epg
 pip install .[full]  # Install with full features
 pip install .        # Basic installation
@@ -36,7 +47,7 @@ pip install .        # Basic installation
 
 ### Method 4: Manual Installation (Source Distribution)
 ```bash
-# Download source from GitHub releases (if available)
+# Download source from GitHub releases
 wget https://github.com/th0ma7/gracenote2epg/archive/v1.5.tar.gz
 tar -xzf v1.5.tar.gz
 cd gracenote2epg-1.5
@@ -46,25 +57,6 @@ pip install .[full]
 ./tv_grab_gracenote2epg --capabilities
 ```
 
-### 🔮 Future: PyPI Installation (Once Published)
-
-Once gracenote2epg is published on PyPI, these commands will work:
-
-```bash
-# Basic installation (future)
-pip install gracenote2epg
-
-# Install with full features (future - recommended)
-pip install gracenote2epg[full]
-
-# Install specific version (future)
-pip install gracenote2epg==1.5
-
-# Feature-specific installation (future)
-pip install gracenote2epg[langdetect]
-pip install gracenote2epg[translations]
-```
-
 ## Platform-Specific Instructions
 
 ### Ubuntu/Debian/RaspberryPi
@@ -72,8 +64,8 @@ pip install gracenote2epg[translations]
 # Update and Install Python and pip if not already installed
 sudo apt update && apt install -y python3 python3-pip python3-venv python3-langdetect python3-polib
 
-# Install gracenote2epg from GitHub
-pip3 install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
+# Install gracenote2epg from PyPI (recommended)
+pip3 install gracenote2epg[full]
 
 # Verify installation
 pip3 list | grep gracenote2epg
@@ -85,8 +77,8 @@ tv_grab_gracenote2epg --version
 # Install Python and pip
 sudo dnf update -y && dnf install -y python3 python3-pip python3-virtualenv
 
-# Install gracenote2epg from GitHub
-pip3 install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
+# Install gracenote2epg from PyPI (recommended)
+pip3 install gracenote2epg[full]
 
 # Verify installation
 pip3 list | grep gracenote2epg
@@ -98,8 +90,8 @@ tv_grab_gracenote2epg --version
 # Install dependencies
 sudo pacman -Syu python python-pip python-virtualenv python-langdetect python-polib
 
-# Install gracenote2epg from GitHub
-pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
+# Install gracenote2epg from PyPI (recommended)
+pip install gracenote2epg[full]
 
 # Verify installation
 pip list | grep gracenote2epg
@@ -110,8 +102,8 @@ tv_grab_gracenote2epg --version
 ```bash
 # Prerequisites: TVheadend must already be installed from Package Center
 
-# Install in TVheadend environment (DSM7)
-sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"'
+# Install gracenote2epg from PyPI (recommended) in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install gracenote2epg[full]'
 
 # Verify installation in TVheadend environment
 sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
@@ -137,8 +129,8 @@ gracenote2epg is available in two distribution formats:
 ## Available Commands After Installation
 
 ```bash
-gracenote2epg --version              # Primary command (wheel based installed only)
 tv_grab_gracenote2epg --capabilities # XMLTV standard wrapper (ESSENTIAL)
+gracenote2epg --version              # Alternate command (wheel based installed only)
 python -m gracenote2epg --version    # Module execution
 ```
 
@@ -151,31 +143,13 @@ python -m gracenote2epg --version    # Module execution
 - `langdetect>=1.0.9` - Automatic language detection for French/English/Spanish
 - `polib>=1.1.0` - Category and term translations using .po files
 
-### Alternative Installion Options
-```bash
-# Get all features (using PEP 508 syntax)
-pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
-
-# Only language detection
-pip install "gracenote2epg[langdetect] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
-
-# Only translations  
-pip install "gracenote2epg[translations] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
-
-# Development features
-pip install "gracenote2epg[dev] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
-
-# Or install dependencies manually
-pip install langdetect polib
-```
-
 ## Verification
 
 ### Test Installation
 ```bash
 # Check if package is installed
 pip list | grep gracenote2epg
-# Expected output: gracenote2epg    1.5    /path/to/installation
+# Expected output: gracenote2epg    1.5.1
 
 # Check version
 tv_grab_gracenote2epg --version
@@ -225,15 +199,14 @@ gracenote2epg auto-detects your system and creates appropriate directories:
 - **Config**: `/var/packages/tvheadend/var/epggrab/gracenote2epg/conf/gracenote2epg.xml` (DSM7)
 - **Config**: `/var/packages/tvheadend/target/var/epggrab/gracenote2epg/conf/gracenote2epg.xml` (DSM6)
 
-
 ## Troubleshooting Installation
 
 ### Common Issues
 
 **Problem**: Permission denied
 ```bash
-# Solution: Install for user only (modern PEP 508 syntax)
-pip install --user "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
+# Solution: Install for user only
+pip install --user gracenote2epg[full]
 ```
 
 **Problem**: Package conflicts
@@ -241,7 +214,13 @@ pip install --user "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenot
 # Solution: Use virtual environment
 python3 -m venv gracenote_env
 source gracenote_env/bin/activate
-pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5"
+pip install gracenote2epg[full]
+```
+
+**Problem**: GitHub installation fails
+```bash
+# Solution: Verify PEP 508 syntax with quotes
+pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git"
 ```
 
 ### Migration Notes
