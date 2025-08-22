@@ -4,8 +4,6 @@ This guide covers complete TVheadend integration for gracenote2epg, including mi
 
 ## 📺 TVheadend EPG Grabber Configuration
 
-## 📺 TVheadend EPG Grabber Configuration
-
 ### Initial Setup
 
 > **💡 TVheadend Users - Easy Setup**: Most users don't need to edit configuration files! Simply use TVheadend's **Extra arguments** box to add your parameters like `--days 7 --zip 92101 --langdetect false` (Configuration → Channel/EPG → EPG Grabber Modules).
