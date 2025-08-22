@@ -71,7 +71,7 @@ Configure gracenote2epg for optimal TVheadend integration. Below is the essentia
    - **Rights**: Only ✅ **Web interface** (Admin unchecked, streaming unchecked)
    - **Allowed networks**:
      - `127.0.0.0/8` (localhost only)
-     - `192.168.0.0/16` (local network)
+     - `192.168.0.0/24` (local network only - localhost no loger works)
      - `0.0.0.0/0,::/0` (all networks - less secure)
    - **All other sections**: Leave unchecked (streaming, video recorder, etc.)
 
