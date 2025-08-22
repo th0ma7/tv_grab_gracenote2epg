@@ -59,54 +59,47 @@ Configure gracenote2epg for optimal TVheadend integration. Below is the essentia
 
 ### TVheadend Authentication Configuration
 
-#### Basic) Anonymous Access (Minimal Permissions)
-
 **Minimal TVheadend permissions for gracenote2epg**:
 
 1. **Configuration** → **Users** → **Access Entries**
 2. **Create/Edit user `*`** (anonymous access):
-   - **Username**: `*`
+   - **Username**:
+     - `*` (anonymous - no authentication)
+     - `username` (authenticated named user - requires creating an entry in the **Passwords** tab)
    - **Enabled**: ✅ **Checked**
    - **Change parameters**: Only **Rights** checked
    - **Rights**: Only ✅ **Web interface** (Admin unchecked, streaming unchecked)
    - **Allowed networks**:
      - `127.0.0.0/8` (localhost only)
-     - `192.168.0.0/24` (local network only - localhost no loger works)
+     - `192.168.0.0/16` (local network)
      - `0.0.0.0/0,::/0` (all networks - less secure)
    - **All other sections**: Leave unchecked (streaming, video recorder, etc.)
 
 3. **Save Configuration**
 
-4. **Test access**:
-   ```bash
-   # Test 1: Basic channel list access
-   curl -s "http://127.0.0.1:9981/api/channel/grid" | head -10
+4. **Create password** → When using authenticated named user you must adjust gracenote2epg configuration accordingly:
+   ```xml
+   <setting id="usern">username</setting>
+   <setting id="passw">password</setting>
+   ```
 
-   # Test 2: Get channel names only
+5. **Test access**:
+   ```bash
+   # Default anonymous channel list access
+   curl -s "http://127.0.0.1:9981/api/channel/grid" | head -10
+   
+   # Default authenticated named user channel list access
+   curl -s  --digest -u <username> "http://127.0.0.1:9981/api/channel/grid" | head -10
+   Enter host password for user '<username>':
+
+   # Get channel names only
    curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].name'
 
-   # Test 3: Get channel numbers only
+   # Get channel numbers only
    curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].number' | sort -V
 
-   # Test 4: Channel names and numbers together
+   # Channel names and numbers together
    curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[] | {name: .name, number: .number}'
-   ```
-
-#### Alternate) Named User Authentication
-
-1. Adjust your configuration to use a named user:
-   ```xml
-   <setting id="usern">your_username</setting>
-   <setting id="passw">your_password</setting>
-   ```
-
-   > **⚠️ Known Issue**: Username/password authentication may not work reliably for channel list access. If you experience issues, fallback to anonymous access (`*` user) above.
-
-2. **Test access**:
-   ```bash
-   # Test authenticated basic channel list access
-   curl -s -u your_username "http://127.0.0.1:9981/api/channel/grid" | head -10
-   Enter host password for user 'your_username': *****
    ```
 
 ## 🔄 Migrating EPG Grabbers in TVheadend
