@@ -4,13 +4,22 @@ This guide covers complete TVheadend integration for gracenote2epg, including mi
 
 ## 📺 TVheadend EPG Grabber Configuration
 
+## 📺 TVheadend EPG Grabber Configuration
+
 ### Initial Setup
+
+> **💡 TVheadend Users - Easy Setup**: Most users don't need to edit configuration files! Simply use TVheadend's **Extra arguments** box to add your parameters like `--days 7 --zip 92101 --langdetect false` (Configuration → Channel/EPG → EPG Grabber Modules).
 
 1. **Access TVheadend Web Interface** (usually http://your-server:9981)
 2. **Navigate**: Configuration → Channel/EPG → EPG Grabber Modules
 3. **Enable gracenote2epg**: 
    - Find **gracenote2epg** - `Internal: XMLTV: North America (tvlistings.gracenote.com using gracenote2epg)`
-   - Add your zip/postal and extra options in **Extra arguments** such as `--days 14 --postal J3B1M4`
+   - **Add your parameters in Extra arguments** (this overrides the default configuration):
+     ```
+     --days 14 --postal J3B1M4
+     --days 7 --zip 92101 --langdetect false
+     --days 7 --zip 90210 --lineupid auto
+     ```
    - Select **Only digits** for **Channel numbers (heuristic)**
    - Check ✅ **Enabled**
    - Check ✅ **Scrape credits and extra information**
@@ -20,6 +29,8 @@ This guide covers complete TVheadend integration for gracenote2epg, including mi
 6. **Set appropriate Interval**
    - Recommended: every 12 hours (default)
 7. **Save Configuration**
+
+> **Important**: Extra arguments override the default configuration file, so you typically don't need to edit `conf/gracenote2epg.xml` manually.
 
 ### TVheadend Integration Settings
 

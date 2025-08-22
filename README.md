@@ -49,8 +49,9 @@ pip install -e .[dev]
 - **Required**: `requests>=2.25.0`
 - **Optional**: `langdetect>=1.0.9` (language detection), `polib>=1.1.0` (translations)
 
-### 🛠️ Quick Examples
+## 🛠️ Quick Examples
 
+### Command Line Examples
 ```bash
 # Show capabilities (XMLTV standard)
 tv_grab_gracenote2epg --capabilities
@@ -76,8 +77,22 @@ tv_grab_gracenote2epg --days 7 --zip 92101 --langdetect false
 
 ### Configuration
 
-The script auto-creates a configuration file on first run. Basic setup:
+> **💡 TVheadend Users - Easy Setup**: Most users don't need to edit configuration files! Simply use TVheadend's **Extra arguments** box to add your parameters like `--days 7 --zip 92101 --langdetect false` (Configuration → Channel/EPG → EPG Grabber Modules). See **[TVheadend Integration Guide](https://github.com/th0ma7/gracenote2epg/blob/main/docs/tvheadend.md)** for details.
 
+### TVheadend Integration Examples
+
+```bash
+# In TVheadend Extra arguments box:
+--days 7 --zip 92101
+--days 14 --postal J3B1M4 --langdetect false  
+--days 7 --zip 90210 --lineupid auto
+```
+
+> **Important**: Extra arguments override the default configuration file, so you typically don't need to edit `conf/gracenote2epg.xml` manually.
+
+#### Option 2: Edit Configuration File (Advanced Users)
+
+Also note that the gracenote2epg auto-creates a configuration file on first run. You can then modify as needed:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <settings version="5">
