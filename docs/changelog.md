@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
+## [1.5.1] - 2025-08-21
+
+### Fixed
+- **Documentation Links**: Fixed broken documentation links in README.md when viewed on PyPI
+  - Changed all relative links to absolute GitHub URLs (e.g., `docs/installation.md` → `https://github.com/th0ma7/gracenote2epg/blob/main/docs/installation.md`)
+
+### Changed
+- **README.md**: Improved structure and removed redundant installation sections for cleaner PyPI display
+
+**Note**: This is a documentation-only release. No functional changes to gracenote2epg itself.
+
 ## [1.5] - 2025-08-21
 
 ### Added
