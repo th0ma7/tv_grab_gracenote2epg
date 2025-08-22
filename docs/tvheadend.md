@@ -43,17 +43,71 @@ Configure gracenote2epg for optimal TVheadend integration. Below is the essentia
   <setting id="days">7</setting>
 
   <!-- TVheadend integration -->
-  <setting id="tvhoff">true</setting>                 <!-- Enable TVH integration -->
+  <setting id="tvhoff">true</setting>                <!-- Enable TVH integration -->
   <setting id="tvhurl">127.0.0.1</setting>           <!-- TVH server IP -->
   <setting id="tvhport">9981</setting>               <!-- TVH port -->
   <setting id="tvhmatch">true</setting>              <!-- Use TVH channel filtering -->
   <setting id="chmatch">true</setting>               <!-- Channel number matching -->
   
-  <!-- Optional: TVH authentication -->
-  <setting id="usern"></setting>                     <!-- TVH username -->
-  <setting id="passw"></setting>                     <!-- TVH password -->
+  <!-- TVH authentication (default: anonymous access) -->
+  <setting id="usern"></setting>                     <!-- Empty = anonymous access -->
+  <setting id="passw"></setting>                     <!-- Empty = anonymous access -->
 </settings>
 ```
+
+> **Default behavior**: The configuration above uses **anonymous access** (empty username/password) which requires the minimal TVheadend permissions described in the Authentication section below.
+
+### TVheadend Authentication Configuration
+
+#### Basic) Anonymous Access (Minimal Permissions)
+
+**Minimal TVheadend permissions for gracenote2epg**:
+
+1. **Configuration** → **Users** → **Access Entries**
+2. **Create/Edit user `*`** (anonymous access):
+   - **Username**: `*`
+   - **Enabled**: ✅ **Checked**
+   - **Change parameters**: Only **Rights** checked
+   - **Rights**: Only ✅ **Web interface** (Admin unchecked, streaming unchecked)
+   - **Allowed networks**:
+     - `127.0.0.0/8` (localhost only)
+     - `192.168.0.0/16` (local network)
+     - `0.0.0.0/0,::/0` (all networks - less secure)
+   - **All other sections**: Leave unchecked (streaming, video recorder, etc.)
+
+3. **Save Configuration**
+
+4. **Test access**:
+   ```bash
+   # Test 1: Basic channel list access
+   curl -s "http://127.0.0.1:9981/api/channel/grid" | head -10
+
+   # Test 2: Get channel names only
+   curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].name'
+
+   # Test 3: Get channel numbers only
+   curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].number' | sort -V
+
+   # Test 4: Channel names and numbers together
+   curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[] | {name: .name, number: .number}'
+   ```
+
+#### Alternate) Named User Authentication
+
+1. Adjust your configuration to use a named user:
+   ```xml
+   <setting id="usern">your_username</setting>
+   <setting id="passw">your_password</setting>
+   ```
+
+   > **⚠️ Known Issue**: Username/password authentication may not work reliably for channel list access. If you experience issues, fallback to anonymous access (`*` user) above.
+
+2. **Test access**:
+   ```bash
+   # Test authenticated basic channel list access
+   curl -s -u your_username "http://127.0.0.1:9981/api/channel/grid" | head -10
+   Enter host password for user 'your_username': *****
+   ```
 
 ## 🔄 Migrating EPG Grabbers in TVheadend
 
@@ -347,35 +401,6 @@ sudo su -s /bin/bash sc-tvheadend -c 'which tv_grab_gracenote2epg'
 
 # If needed, restart TVheadend to refresh EPG grabber list
 sudo synopkg restart tvheadend
-```
-
-### TVheadend Authentication Issues
-
-If TVheadend requires authentication:
-
-```xml
-<setting id="usern">your_username</setting>
-<setting id="passw">your_password</setting>
-```
-
-Or configure in TVheadend:
-1. **Configuration** → **Access Entries**
-2. **Add entry** for gracenote2epg access
-3. **Allow EPG grabber access** without authentication
-
-#### Validating TVheadend Channel list access
-```bash
-# Download TVheadend channel list names
-curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].name'
-
-# Download TVheadend channel list numbers
-curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[].number' | sort -V
-
-# Alternative: Get channel numbers and names together
-curl -s "http://127.0.0.1:9981/api/channel/grid" | jq '.entries[] | {name: .name, number: .number}'
-
-# Download entire channel listing using <username> (will prompt for password)
-curl -s -u <username> "http://127.0.0.1:9981/api/channel/grid"
 ```
 
 ### Channel Mapping Verification
