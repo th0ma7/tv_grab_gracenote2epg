@@ -256,16 +256,17 @@ pytest tests/test_config.py::test_configuration_parsing
 
 ```bash
 # Download XMLTV DTD for validation
-wget http://xmltv.cvs.sourceforge.net/viewvc/*checkout*/xmltv/xmltv/xmltv.dtd
+curl -L https://raw.githubusercontent.com/XMLTV/xmltv/master/xmltv.dtd -o xmltv.dtd
 
 # Validate XMLTV output against DTD
-xmllint --noout --dtdvalid xmltv.dtd ~/gracenote2epg/cache/xmltv.xml
-
-# Check for well-formed XML
-xmllint --noout ~/gracenote2epg/cache/xmltv.xml && echo "Well-formed XML"
+xmllint --noout --dtdvalid xmltv.dtd ~/gracenote2epg/cache/xmltv.xml \
+        && echo "Validation: DTD valid" \
+        || echo "Validation: ERROR"
+# Should return: Validation: DTD valid
 
 # Validate encoding
-file ~/gracenote2epg/cache/xmltv.xml  # Should show UTF-8
+file ~/gracenote2epg/cache/xmltv.xml
+# Should show: XML 1.0 document, Unicode text, UTF-8 text, with very long lines (500)
 ```
 
 #### XMLTV Content Validation
