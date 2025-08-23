@@ -357,60 +357,82 @@ If automatic matching doesn't work:
 
 ### gracenote2epg Not Available in EPG Grabber Modules in TVheadend Interface
 
-If you don't see `gracenote2epg` in **Configuration → Channel/EPG → EPG Grabber Modules**:
+If you don't see `gracenote2epg` in **Configuration → Channel/EPG → EPG Grabber Modules** (shows as `Internal: XMLTV: North America (tvlistings.gracenote.com using gracenote2epg)`).  Issue may be due to having installed gracenote2epg from sources elsewhere than into /usr/local/gracenote2epg.  Please make sure you follow **[Installation Guide](installation.md)** relatively to source-based installation.
 
 #### For Standard Linux Installations
+
+**Step 1: Verify Installation and Permissions**
 ```bash
-# Verify installation
-which tv_grab_gracenote2epg
-tv_grab_gracenote2epg --capabilities
+# Test basic installation from your user
+which tv_grab_gracenote2epg        # Shold return /usr/local/bin/tv_grab_gracenote2epg if installed from sources
+tv_grab_gracenote2epg --version    # Should return the version
 
-# Check TVheadend can find the script
-sudo -u hts tv_grab_gracenote2epg --capabilities
+# Test TVheadend user access to gracenote2epg
+sudo su -s /bin/bash hts -c 'which tv_grab_gracenote2epg'       # Shold return /usr/local/bin/tv_grab_gracenote2epg if installed from sources
+sudo su -s /bin/bash hts -c 'tv_grab_gracenote2epg --version'   # Should return the version
+```
 
-### Add gracenote2epg location to the default deamon PATH (for source / python virtual environment installations)
+**Step 2: Restart TVheadend**
+Upon start TVheadend does a test-run of all EPG grabbers to confirm they work as expected.  Confirmation of proper initialization of gracenote2epg can be seen in the logs:
+```bash
+sudo journalctl -u tvheadend | grep -i gracenote
+Aug 23 14:22:22 zap2xml tvheadend[72262]: epggrab: module /usr/local/bin/tv_grab_gracenote2epg created
+Aug 23 14:22:22 zap2xml tvheadend[72262]: 2025-08-23 14:22:22.089 [   INFO] epggrab: module /usr/local/bin/tv_grab_gracenote2epg created
+```
 
-# Create tvheadend systemd override directory (if not existing)
-sudo mkdir -p /etc/systemd/system/tvheadend.service.d/
-
-# Add the environment variable
-sudo tee /etc/systemd/system/tvheadend.service.d/gracenote2epg.conf << EOF
-[Service]
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:<pat-to-my-gracenote2epg-installation>"
-EOF
-
-# Reload and restart
-sudo systemctl daemon-reload
+If TVheadend was installed prior to gracenote2epg it may simply need a restart to re-confirm available EPG:
+```
 sudo systemctl restart tvheadend
 ```
 
-#### For Synology TVheadend Installations
+**Step 3: Update PATH if Needed**
+If TVheadend still can't find gracenote2epg as you may have used a custom installation location, such PATH needs to be added to its startup environment.
 ```bash
-# Verify installation in TVheadend environment
-sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/tv_grab_gracenote2epg --capabilities'
+# Validate current TVheadend daemon environement:
+systemctl show tvheadend -p Environment    # Should show 'Environment='
 
-# Check if script is in correct location for TVheadend
-sudo su -s /bin/bash sc-tvheadend -c 'which tv_grab_gracenote2epg'
+# Capture current default PATH for hts user:
+sudo su -s /bin/bash hts -c 'echo $PATH'
+/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 
-# If needed, restart TVheadend to refresh EPG grabber list
-sudo synopkg restart tvheadend
+# Create a TVheadend systemd service directory
+sudo mkdir /etc/systemd/system/tvheadend.service.d/
+
+# Add the environment variable using previously captured PATH and including :<MYPATH> as appropriate
+sudo tee /etc/systemd/system/tvheadend.service.d/gracenote2epg.conf << EOF
+[Service]
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:<CUSTOM_PATH>"
+EOF
+
+# Reload systemd and show the new Environment definition
+sudo systemctl daemon-reload
+systemctl show tvheadend -p Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:<CUSTOM_PATH>
+
+# Restart TVheadend
+sudo systemctl restart tvheadend
+
+# Validate it does now find gracenote2epg
+sudo journalctl -u tvheadend | grep -i gracenote
+Aug 23 14:45:06 zap2xml tvheadend[72661]: 2025-08-23 14:45:06.293 [   INFO] epggrab: module <CUSTOM_PATH>/tv_grab_gracenote2epg created
+Aug 23 14:45:06 zap2xml tvheadend[72661]: epggrab: module <CUSTOM_PATH>/tv_grab_gracenote2epg created
 ```
 
-### Channel Mapping Verification
+### Fix Client Connectivity Issues
 
-Based on your TVheadend channel list, here are some common mapping scenarios:
+⚠️ **Common issue**: Clients unable to connect to TVheadend (unrelated to gracenote2epg)
 
-```bash
-# Test specific channel matching
-tv_grab_gracenote2epg --show-lineup --zip YOUR_ZIP_CODE --debug
+**Solution - Configure Network Access**:
+1. **TVheadend Web Interface** → **Configuration** → **Users** → **Access Entries**
+2. **Edit user `*`** (anonymous access):
+   - **Allowed networks**: Adjust for your network setup:
+     ```
+     127.0.0.1/32,192.168.1.0/24        # Local network
+     127.0.0.1/32,172.16.16.0/24        # Example Docker network
+     0.0.0.0/0,::/0                     # All networks (less secure)
+     ```
+3. **Save Configuration**
 
-# Look for channels like:
-# - NBC (5.1) → should match "NBC" in TVheadend
-# - CBS (3.1) → should match "CBS" in TVheadend  
-# - Fox (44.1) → should match "Fox" in TVheadend
-# - CBC (6.1) → should match "CBC" in TVheadend
-# - CTV (12.1) → should match "CTV" in TVheadend
-```
 
 ## 📚 Related Documentation
 
@@ -431,4 +453,3 @@ For TVheadend-specific issues:
    - Complete debug output
    - TVheadend log excerpts
    - Your gracenote2epg configuration (remove passwords)
-   - Output of channel API call: `curl -s "http://127.0.0.1:9981/api/channel/grid"`

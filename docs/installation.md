@@ -48,13 +48,24 @@ pip install .        # Basic installation
 ### Method 4: Manual Installation (Source Distribution)
 ```bash
 # Download source from GitHub releases
-wget https://github.com/th0ma7/gracenote2epg/archive/v1.5.tar.gz
-tar -xzf v1.5.tar.gz
-cd gracenote2epg-1.5
-pip install .[full]
+wget https://github.com/th0ma7/gracenote2epg/archive/v1.5.1.tar.gz -O gracenote2epg-1.5.1.tar.gz
 
-# Or run directly without installation
-./tv_grab_gracenote2epg --capabilities
+# Install into /usr/local/
+sudo tar -xzf gracenote2epg-1.5.1.tar.gz -C /usr/local/
+
+# Create a generic gracenote2epg symbolic link
+sudo ln -sf /usr/local/gracenote2epg-1.5.1 /usr/local/gracenote2epg
+
+# Make tv_grab_gracenote2epg available in /usr/local/bin
+sudo ln -sf /usr/local/gracenote2epg/tv_grab_gracenote2epg /usr/local/bin
+
+# Validate link exists
+ls -la /usr/local/bin/tv_grab_gracenote2epg
+lrwxrwxrwx 1 root root 46 Aug 23 14:16 /usr/local/bin/tv_grab_gracenote2epg -> /usr/local/gracenote2epg/tv_grab_gracenote2epg
+
+# Run from installation path
+which tv_grab_gracenote2epg       # Should return /usr/local/bin/tv_grab_gracenote2epg
+tv_grab_gracenote2epg --version   # Should return its version
 ```
 
 ## Platform-Specific Instructions
