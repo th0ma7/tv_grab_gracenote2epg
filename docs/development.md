@@ -332,7 +332,7 @@ The project uses a centralized version management system:
 # gracenote2epg/__init__.py
 
 # Example:
-__version__ = "1.5.0"
+__version__ = "1.5.2"
 
 # setup.py will automatically pick up the new version
 ```

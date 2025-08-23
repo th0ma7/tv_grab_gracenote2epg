@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
 
+## [1.5.2] - 2025-08-23
+
+### Fixed
+- **Extended Description**: Fixed to achieve expected behavior 
+  - `xdesc=false`: Use basic guide description WITHOUT any enhanced info
+  - `xdesc=true`: Use extended series description (if available) WITH enhanced info (e.g. `• 2023 | Rated: TV-14 | NEW | CC`)
+
+### Changed
+- **Documentation**: Many additions and fixes to configuration.md, development.md, installation.md and tvheadend.md
+
 ## [1.5.1] - 2025-08-21
 
 ### Fixed
