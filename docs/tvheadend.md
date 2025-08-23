@@ -373,6 +373,7 @@ sudo su -s /bin/bash hts -c 'tv_grab_gracenote2epg --version'   # Should return 
 ```
 
 **Step 2: Restart TVheadend**
+
 Upon start TVheadend does a test-run of all EPG grabbers to confirm they work as expected.  Confirmation of proper initialization of gracenote2epg can be seen in the logs:
 ```bash
 sudo journalctl -u tvheadend | grep -i gracenote
@@ -386,6 +387,7 @@ sudo systemctl restart tvheadend
 ```
 
 **Step 3: Update PATH if Needed**
+
 If TVheadend still can't find gracenote2epg as you may have used a custom installation location, such PATH needs to be added to its startup environment.
 ```bash
 # Validate current TVheadend daemon environement:
