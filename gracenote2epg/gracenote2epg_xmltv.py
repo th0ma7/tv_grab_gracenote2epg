@@ -163,12 +163,10 @@ class XmltvGenerator:
         missing_desc_count = 0
 
         # Configuration values
-        use_extended_desc = config.get("xdesc", False)  # Use extended series description
-        use_extended_details = config.get("xdetails", False)  # Add extra details (• S37E13 | CC)
-        use_actor_photos = config.get("xdetails", False)  # Actor photos with extended details
-        need_extended_download = (
-            use_extended_desc or use_extended_details
-        )  # Download if either is true
+        use_extended_desc = config.get(
+            "xdesc", False
+        )  # Use extended series description AND add enhanced info
+        use_extended_details = config.get("xdetails", False)  # Download extended details from API
         safe_titles = config.get("stitle", False)
         ep_genre = config.get("epgenre", "3")
         ep_icon = config.get("epicon", "1")
@@ -176,7 +174,9 @@ class XmltvGenerator:
         try:
             logging.info("Writing Episodes to xmltv.xml file...")
             logging.info(
-                "Configuration: xdesc=%s, xdetails=%s", use_extended_desc, use_extended_details
+                "Configuration: xdesc=%s (controls description selection and enhanced info), xdetails=%s (controls API download)",
+                use_extended_desc,
+                use_extended_details,
             )
 
             # Count total episodes for progress tracking
@@ -238,7 +238,7 @@ class XmltvGenerator:
 
                         if self.language_detector:
                             # Priority 1: Try to detect from extended description if available
-                            if use_extended_desc and need_extended_download:
+                            if use_extended_desc and use_extended_details:
                                 extended_desc = episode_data.get("epseriesdesc")
                                 if extended_desc and str(extended_desc).strip():
                                     detected_language = self.language_detector.detect_language(
@@ -255,11 +255,7 @@ class XmltvGenerator:
 
                         # Prepare description
                         final_description = self._prepare_description(
-                            episode_data,
-                            detected_language,
-                            use_extended_desc,
-                            use_extended_details,
-                            need_extended_download,
+                            episode_data, detected_language, use_extended_desc, use_extended_details
                         )
 
                         if final_description:
@@ -295,13 +291,13 @@ class XmltvGenerator:
                             )
 
                         # 4. CREDITS?
-                        self._write_credits_dtd_compliant(fh, episode_data, use_actor_photos)
+                        self._write_credits_dtd_compliant(fh, episode_data, use_extended_details)
 
                         # 5. DATE?
                         if episode_data.get("epyear"):
                             fh.write(f'\t\t<date>{episode_data["epyear"]}</date>\n')
 
-                        # 6. CATEGORY* - MODIFICATION: Passer detected_language
+                        # 6. CATEGORY*
                         self._write_categories(fh, episode_data, ep_genre, detected_language)
 
                         # 7. KEYWORD* (not used)
@@ -336,7 +332,7 @@ class XmltvGenerator:
                                     country_code = "US"
                             fh.write(f"\t\t<country>{country_code}</country>\n")
 
-                        # 14. EPISODE-NUM* (FIXED: Proper xmltv_ns format with spaces)
+                        # 14. EPISODE-NUM* (Proper xmltv_ns format with spaces)
                         dd_progid = episode_data.get("epid", "")
                         if dd_progid and len(dd_progid) >= 4:
                             fh.write(
@@ -564,13 +560,26 @@ class XmltvGenerator:
         detected_language: str,
         use_extended_desc: bool,
         use_extended_details: bool,
-        need_extended_download: bool,
     ) -> Optional[str]:
-        """Prepare final description based on xdesc and xdetails settings"""
+        """
+        Prepare final description based on xdesc setting
+
+        Behavior:
+        - xdesc=false: Use basic guide description WITHOUT any enhanced info
+        - xdesc=true: Use extended series description (if available) WITH enhanced info
+
+        Args:
+            episode_data: Episode data dictionary
+            detected_language: Detected language for translations
+            use_extended_desc: Whether to use extended descriptions and add enhanced info (xdesc setting)
+            use_extended_details: Whether extended details were downloaded (xdetails setting)
+        """
         try:
             base_description = None
 
-            if use_extended_desc and need_extended_download:
+            # Select which description to use
+            if use_extended_desc and use_extended_details:
+                # xdesc=true AND xdetails=true: Try to use extended series description
                 extended_desc = episode_data.get("epseriesdesc")
                 if extended_desc and str(extended_desc).strip():
                     base_description = str(extended_desc).strip()
@@ -579,6 +588,7 @@ class XmltvGenerator:
                         episode_data.get("epshow", "Unknown"),
                     )
                 else:
+                    # Fall back to basic if extended not available
                     basic_desc = episode_data.get("epdesc")
                     base_description = str(basic_desc).strip() if basic_desc else ""
                     logging.debug(
@@ -586,22 +596,29 @@ class XmltvGenerator:
                         episode_data.get("epshow", "Unknown"),
                     )
             else:
-                # Use basic description from guide (shortDesc)
+                # xdesc=false OR xdetails=false: Use basic description from guide
                 basic_desc = episode_data.get("epdesc")
                 base_description = str(basic_desc).strip() if basic_desc else ""
                 logging.debug(
-                    "Using basic guide description for %s", episode_data.get("epshow", "Unknown")
+                    "Using basic guide description for %s (xdesc=%s, xdetails=%s)",
+                    episode_data.get("epshow", "Unknown"),
+                    use_extended_desc,
+                    use_extended_details,
                 )
 
-            # Add extended details if xdetails=true
+            # Only add enhanced info if xdesc=true
             if base_description:
-                if use_extended_details:
-                    # Add extra info (• S37E13 | CC, year, rating, etc.) from guide data
+                if use_extended_desc:
+                    # xdesc=true: Add enhanced info (year, rating, flags, etc.)
+                    # but WITHOUT S##E## as Kodi already displays it
                     return self._add_enhanced_info_to_basic_desc(
-                        base_description, episode_data, detected_language
+                        base_description,
+                        episode_data,
+                        detected_language,
+                        include_season_episode=False,
                     )
                 else:
-                    # Use description as-is
+                    # xdesc=false: Return description as-is, no enhancements
                     return base_description
 
             return None
@@ -615,9 +632,18 @@ class XmltvGenerator:
             return None
 
     def _add_enhanced_info_to_basic_desc(
-        self, base_desc: str, episode_data: Dict, language: str
+        self,
+        base_desc: str,
+        episode_data: Dict,
+        language: str,
+        include_season_episode: bool = False,
     ) -> str:
-        """Add enhanced info (with translations) to basic description"""
+        """
+        Add enhanced info (with translations) to basic description
+
+        Added parameter to control whether to include S##E## info
+        (default False as Kodi already displays this)
+        """
         try:
             # Build additional info with translations
             additional_info = []
@@ -626,8 +652,8 @@ class XmltvGenerator:
             if episode_data.get("epyear") and str(episode_data["epyear"]) != "0":
                 additional_info.append(str(episode_data["epyear"]))
 
-            # Add season/episode info for series
-            if episode_data.get("epsn") and episode_data.get("epen"):
+            # Add season/episode info ONLY if requested (by default NO as Kodi shows it)
+            if include_season_episode and episode_data.get("epsn") and episode_data.get("epen"):
                 try:
                     season_ep = f"S{int(episode_data['epsn']):02d}E{int(episode_data['epen']):02d}"
                     additional_info.append(season_ep)
@@ -710,7 +736,7 @@ class XmltvGenerator:
                 info_str = " | ".join(additional_info)
                 enhanced_description = f"{base_desc} • {info_str}"
                 logging.debug(
-                    "Enhanced description created for %s: added %d info items in %s",
+                    "Enhanced description created for %s: added %d info items in %s (S##E## excluded)",
                     episode_data.get("epshow", "Unknown"),
                     len(additional_info),
                     language,
