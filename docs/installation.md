@@ -23,7 +23,7 @@ pip install gracenote2epg[translations]  # Translation support only
 
 #### Latest Stable Release
 ```bash
-# Install latest stable release from GitHub - PEP 508 syntax
+# Install latest stable release from GitHub
 pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5.2"
 
 # Basic installation from GitHub
@@ -32,7 +32,10 @@ pip install "gracenote2epg @ git+https://github.com/th0ma7/gracenote2epg.git@v1.
 
 #### Latest Development Version
 ```bash
-# Install latest development version - PEP 508 syntax
+# Install latest git snapshot
+pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git"
+
+# Install latest development version
 pip install "gracenote2epg[dev] @ git+https://github.com/th0ma7/gracenote2epg.git"
 ```
 
@@ -115,6 +118,9 @@ tv_grab_gracenote2epg --version
 
 # Install gracenote2epg from PyPI (recommended) in TVheadend environment
 sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install gracenote2epg[full]'
+
+# Install latest git snapshot
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git"'
 
 # Verify installation in TVheadend environment
 sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 list | grep gracenote2epg'
