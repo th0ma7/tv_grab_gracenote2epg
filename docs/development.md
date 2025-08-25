@@ -250,9 +250,7 @@ pytest tests/test_config.py::test_configuration_parsing
 ./tv_grab_gracenote2epg --days 1 --zip 92101 --debug --console
 ```
 
-### XMLTV Validation
-
-#### Technical XMLTV Validation (Development)
+### XMLTV DTD Validation
 
 ```bash
 # Download XMLTV DTD for validation
@@ -267,52 +265,6 @@ xmllint --noout --dtdvalid xmltv.dtd ~/gracenote2epg/cache/xmltv.xml \
 # Validate encoding
 file ~/gracenote2epg/cache/xmltv.xml
 # Should show: XML 1.0 document, Unicode text, UTF-8 text, with very long lines (500)
-```
-
-#### XMLTV Content Validation
-
-```bash
-# Check program count
-grep -c "programme start=" ~/gracenote2epg/cache/xmltv.xml
-
-# Check channel count  
-grep -c "channel id=" ~/gracenote2epg/cache/xmltv.xml
-
-# Validate time formats (should be XMLTV format: YYYYMMDDHHMMSS +TZTZ)
-grep "programme start=" ~/gracenote2epg/cache/xmltv.xml | head -5
-
-# Check for required elements
-grep -c "<title" ~/gracenote2epg/cache/xmltv.xml     # Program titles
-grep -c "<desc" ~/gracenote2epg/cache/xmltv.xml      # Descriptions
-grep -c "<category" ~/gracenote2epg/cache/xmltv.xml  # Categories
-```
-
-#### XMLTV Standards Compliance
-
-```bash
-# Check DOCTYPE declaration
-head -5 ~/gracenote2epg/cache/xmltv.xml | grep DOCTYPE
-
-# Expected: <!DOCTYPE tv SYSTEM "xmltv.dtd">
-
-# Check generator information
-grep "generator-info" ~/gracenote2epg/cache/xmltv.xml
-
-# Check encoding declaration
-head -1 ~/gracenote2epg/cache/xmltv.xml | grep "encoding"
-```
-
-### Performance Testing
-
-```bash
-# Test cache efficiency
-./tv_grab_gracenote2epg --days 7 --zip 92101 --debug | grep -i "cache"
-
-# Measure execution time
-time ./tv_grab_gracenote2epg --days 1 --zip 92101
-
-# Test memory usage
-/usr/bin/time -v ./tv_grab_gracenote2epg --days 1 --zip 92101
 ```
 
 ## Version Management
@@ -332,7 +284,7 @@ The project uses a centralized version management system:
 # gracenote2epg/__init__.py
 
 # Example:
-__version__ = "1.5.2"
+__version__ = "1.5.3"
 
 # setup.py will automatically pick up the new version
 ```
