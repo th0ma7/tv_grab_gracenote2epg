@@ -1,8 +1,8 @@
 """
-gracenote2epg.gracenote2epg_downloader - Optimized download manager
+gracenote2epg.downloader.base - Base HTTP downloader
 
-Handles HTTP downloads with WAF protection, adaptive delays, connection reuse,
-and intelligent retry logic for both guide data and extended series details.
+Optimized download manager with WAF protection, adaptive delays, connection reuse,
+and intelligent retry logic. Moved from gracenote2epg_downloader.py
 """
 
 import json

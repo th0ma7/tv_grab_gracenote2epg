@@ -1,8 +1,9 @@
 """
-gracenote2epg.gracenote2epg_parallel - Parallel download manager
+gracenote2epg.downloader.parallel - Parallel download manager
 
 Provides parallel downloading capabilities for guide blocks and series details
 with intelligent concurrency control, rate limiting, and WAF protection.
+Moved from gracenote2epg_parallel.py
 """
 
 import json
@@ -16,8 +17,8 @@ from queue import Queue
 from typing import Dict, List, Optional, Tuple, Any, Callable
 import urllib.parse
 
-from .gracenote2epg_downloader import OptimizedDownloader
-from .gracenote2epg_utils import TimeUtils
+from .base import OptimizedDownloader
+from ..utils import TimeUtils
 
 
 @dataclass
@@ -335,7 +336,6 @@ class ParallelDownloadManager:
                         # Progress callback
                         if progress_callback:
                             progress_callback(completed, total)
-                        # Note: Removed duplicate logging here - callback handles it
 
                     except Exception as e:
                         logging.error("Error processing task %s: %s", task.task_id, str(e))
@@ -344,8 +344,6 @@ class ParallelDownloadManager:
         elapsed = time.time() - start_time
         with self.stats_lock:
             self.stats['total_time'] = elapsed
-            # Don't update total_tasks here as it's set by individual downloads
-            # self.stats['total_tasks'] = len(tasks)  # This includes cached items
 
         # Log summary
         self._log_download_summary("Guide blocks", elapsed)
@@ -439,7 +437,6 @@ class ParallelDownloadManager:
                         # Progress callback
                         if progress_callback:
                             progress_callback(completed, total)
-                        # Note: Removed duplicate logging here - callback handles it
 
                     except Exception as e:
                         logging.error("Error processing series %s: %s", task.task_id, str(e))
@@ -495,17 +492,7 @@ class ParallelDownloadManager:
     def consolidate_downloader_stats(self):
         """Consolidate statistics from all thread-local downloaders"""
         try:
-            # Note: This is tricky because thread-local storage is per-thread
-            # and we can't easily access other threads' data from here.
-            # The statistics are already being collected in the _download_task method,
-            # so this is mainly for any final cleanup/validation.
-
             logging.debug("Consolidating downloader statistics from parallel workers")
-
-            # The actual statistics collection happens in _download_task
-            # where we update self.stats for each completed task.
-            # This method is called before cleanup to ensure all stats are recorded.
-
         except Exception as e:
             logging.warning("Error consolidating downloader stats: %s", str(e))
 

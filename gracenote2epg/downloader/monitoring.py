@@ -1,8 +1,8 @@
 """
-gracenote2epg.gracenote2epg_monitoring - Real-time monitoring and metrics
+gracenote2epg.downloader.monitoring - Real-time monitoring and metrics
 
 Provides real-time monitoring, progress tracking, and performance metrics
-for parallel download operations.
+for parallel download operations. Moved from gracenote2epg_monitoring.py
 """
 
 import json

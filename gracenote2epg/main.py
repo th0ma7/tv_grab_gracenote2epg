@@ -2,7 +2,8 @@
 """
 gracenote2epg - North America TV Guide Grabber
 
-Enhanced version with parallel download support for improved performance.
+Simplified version using unified parallel download architecture.
+Single download method that adapts from sequential (1 worker) to parallel (N workers).
 """
 
 import logging
@@ -10,15 +11,15 @@ import sys
 import time
 from pathlib import Path
 
-# Import the enhanced parser with parallel support
-from .gracenote2epg_args import ArgumentParser
-from .gracenote2epg_config import ConfigManager
-from .gracenote2epg_downloader import OptimizedDownloader
-from .gracenote2epg_parser_parallel import GuideParser  # Enhanced version
-from .gracenote2epg_tvheadend import TvheadendClient
-from .gracenote2epg_utils import CacheManager
-from .gracenote2epg_xmltv import XmltvGenerator
-from .gracenote2epg_logrotate import LogRotationManager
+# Import the unified download system
+from .args import ArgumentParser
+from .config import ConfigManager
+from .downloader import create_download_system, get_performance_config, OptimizedDownloader
+from .parser.guide import GuideParser  # Unified parser
+from .tvheadend import TvheadendClient
+from .utils import CacheManager
+from .xmltv import XmltvGenerator
+from .logrotate import LogRotationManager
 
 # Package version
 from . import __version__
@@ -50,8 +51,6 @@ def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(file_level)
-
-    # Clear any existing handlers and add file handler
     root_logger.handlers.clear()
     root_logger.addHandler(file_handler)
 
@@ -66,34 +65,51 @@ def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
     return file_handler
 
 
-def get_parallel_config() -> dict:
-    """
-    Get parallel download configuration from environment or defaults
-
-    Returns:
-        Dictionary with parallel download settings
-    """
+def get_parallel_config(args) -> dict:
+    """Get parallel download configuration from arguments and environment"""
     import os
 
-    config = {
-        'enabled': os.environ.get('GRACENOTE_PARALLEL', 'true').lower() == 'true',
-        'max_workers': int(os.environ.get('GRACENOTE_MAX_WORKERS', '4')),
-        'adaptive': os.environ.get('GRACENOTE_ADAPTIVE', 'true').lower() == 'true',
-        'rate_limit': os.environ.get('GRACENOTE_RATE_LIMIT', 'true').lower() == 'true',
+    # Get base configuration from arguments
+    base_config = {
+        'enabled': getattr(args, 'parallel_enabled', True),
+        'max_workers': getattr(args, 'workers', None),
+        'adaptive': getattr(args, 'adaptive_enabled', True),
+        'rate_limit': getattr(args, 'rate_limit', None),
     }
 
+    # Override with environment variables if set
+    if os.environ.get('GRACENOTE_PARALLEL'):
+        base_config['enabled'] = os.environ.get('GRACENOTE_PARALLEL', 'true').lower() == 'true'
+    
+    if os.environ.get('GRACENOTE_MAX_WORKERS'):
+        base_config['max_workers'] = int(os.environ.get('GRACENOTE_MAX_WORKERS', '4'))
+    
+    if os.environ.get('GRACENOTE_ADAPTIVE'):
+        base_config['adaptive'] = os.environ.get('GRACENOTE_ADAPTIVE', 'true').lower() == 'true'
+
+    # Get optimized performance config if max_workers not set
+    if base_config['max_workers'] is None:
+        perf_config = get_performance_config()
+        base_config.update(perf_config)
+    
+    # Force sequential mode if disabled
+    if not base_config['enabled']:
+        base_config['max_workers'] = 1
+        base_config['adaptive'] = False
+        base_config['enable_monitoring'] = False
+
     # Validate max_workers
-    if config['max_workers'] < 1:
-        config['max_workers'] = 1
-    elif config['max_workers'] > 10:
-        config['max_workers'] = 10
+    if base_config['max_workers'] < 1:
+        base_config['max_workers'] = 1
+    elif base_config['max_workers'] > 10:
+        base_config['max_workers'] = 10
         logging.warning("Max workers limited to 10 to avoid server overload")
 
-    return config
+    return base_config
 
 
 def main():
-    """Main application entry point with parallel download support"""
+    """Main application entry point with unified download architecture"""
     python_start_time = time.time()
 
     try:
@@ -132,9 +148,7 @@ def main():
         file_handler = setup_logging(logging_config, log_file, retention_config)
 
         # Check for log rotation
-        if retention_config.get("enabled", False) and hasattr(
-            file_handler, "_check_startup_rotation"
-        ):
+        if retention_config.get("enabled", False) and hasattr(file_handler, "_check_startup_rotation"):
             try:
                 logging.info("Checking for startup log rotation...")
                 file_handler._check_startup_rotation()
@@ -147,25 +161,27 @@ def main():
         logging.info("gracenote2epg session started - Version %s", __version__)
 
         # Get parallel download configuration
-        parallel_config = get_parallel_config()
+        parallel_config = get_parallel_config(args)
 
-        # Log parallel configuration
+        # Log performance configuration
         logging.info("Performance Configuration:")
-        logging.info("  Parallel downloads: %s",
-                    "ENABLED" if parallel_config['enabled'] else "DISABLED")
+        if parallel_config['max_workers'] == 1:
+            logging.info("  Mode: SEQUENTIAL (1 worker)")
+            if parallel_config.get('enabled', True):
+                logging.info("  Note: Using unified architecture in sequential mode")
+        else:
+            logging.info("  Mode: PARALLEL (%d workers)", parallel_config['max_workers'])
+            logging.info("  Adaptive concurrency: %s", 
+                        "enabled" if parallel_config.get('adaptive', True) else "disabled")
 
-        if parallel_config['enabled']:
-            logging.info("  Max concurrent workers: %d", parallel_config['max_workers'])
-            logging.info("  Adaptive concurrency: %s",
-                        "enabled" if parallel_config['adaptive'] else "disabled")
-            logging.info("  Rate limiting: %s",
-                        "enabled" if parallel_config['rate_limit'] else "disabled")
+        if parallel_config.get('rate_limit'):
+            logging.info("  Rate limiting: %.1f requests/second", parallel_config['rate_limit'])
 
-            # Performance tips
-            if parallel_config['max_workers'] == 1:
-                logging.info("  TIP: Increase GRACENOTE_MAX_WORKERS for better performance")
-            elif parallel_config['max_workers'] > 6:
-                logging.info("  NOTE: High worker count may trigger rate limiting")
+        # Performance tips
+        if parallel_config['max_workers'] == 1:
+            logging.info("  TIP: Use --workers N for parallel downloads (faster)")
+        elif parallel_config['max_workers'] > 6:
+            logging.info("  NOTE: High worker count may trigger rate limiting")
 
         if logging_config["level"] == "debug":
             logging.info("Debug logging enabled - all debug information will be logged")
@@ -237,23 +253,34 @@ def main():
             grid_time_start, days, xmltv_file, xmltv_retention_days
         )
 
-        # Download and parse guide data with parallel support
-        with OptimizedDownloader(base_delay=0.8, min_delay=0.4) as downloader:
+        # Create unified download system
+        base_downloader, parallel_manager, monitor = create_download_system(
+            max_workers=parallel_config['max_workers'],
+            enable_monitoring=parallel_config.get('enable_monitoring', False),
+            enable_adaptive=parallel_config.get('adaptive', True),
+            base_delay=parallel_config.get('base_delay', 0.8),
+            min_delay=parallel_config.get('min_delay', 0.4)
+        )
 
-            # Create enhanced parser with parallel support
+        # Start monitoring if enabled
+        if monitor:
+            monitor.start()
+
+        try:
+            # Create unified guide parser
             guide_parser = GuideParser(
                 cache_manager=cache_manager,
-                downloader=downloader,
+                base_downloader=base_downloader,
                 tvh_client=tvh_client,
-                enable_parallel=parallel_config['enabled'],
-                max_workers=parallel_config['max_workers']
+                max_workers=parallel_config['max_workers'],
+                enable_adaptive=parallel_config.get('adaptive', True)
             )
 
             # Track performance metrics
             download_start = time.time()
 
-            # Download guide blocks
-            guide_success = guide_parser.optimized_guide_download(
+            # Download and parse guide data
+            guide_success = guide_parser.download_and_parse_guide(
                 grid_time_start=grid_time_start,
                 day_hours=day_hours,
                 config_manager=config_manager,
@@ -273,7 +300,7 @@ def main():
             extended_download_time = 0
             if config_manager.needs_extended_download():
                 extended_start = time.time()
-                extended_success = guide_parser.parse_extended_details()
+                extended_success = guide_parser.download_and_parse_extended_details()
                 extended_download_time = time.time() - extended_start
 
                 if not extended_success:
@@ -321,14 +348,51 @@ def main():
                         xmltv_generation_time,
                         (xmltv_generation_time / total_time * 100))
 
-            # Performance comparison
-            if parallel_config['enabled']:
+            # Performance comparison and statistics
+            stats = guide_parser.get_statistics()
+            
+            logging.info("=" * 60)
+            logging.info("NETWORK STATISTICS:")
+            
+            mode_description = "sequential" if parallel_config['max_workers'] == 1 else "parallel"
+            logging.info("  Download mode: %s (%d workers)", 
+                        mode_description, parallel_config['max_workers'])
+            
+            logging.info("  Total requests: %d", stats.get('total_requests', 0))
+            logging.info("  Successful downloads: %d", stats.get('successful', 0))
+            logging.info("  Failed downloads: %d", stats.get('failed', 0))
+            logging.info("  From cache: %d", stats.get('cached', 0))
+
+            bytes_downloaded = stats.get('bytes_downloaded', 0)
+            if bytes_downloaded > 0:
+                logging.info("  Data downloaded: %.2f MB", bytes_downloaded / (1024 * 1024))
+
+            # Performance metrics
+            success_rate = stats.get('success_rate', 0)
+            if success_rate > 0:
+                logging.info("  Success rate: %.1f%%", success_rate)
+
+            requests_per_second = stats.get('requests_per_second', 0)
+            if requests_per_second > 0:
+                logging.info("  Download rate: %.1f requests/second", requests_per_second)
+
+            throughput = stats.get('throughput_mbps', 0)
+            if throughput > 0:
+                logging.info("  Throughput: %.2f MB/s", throughput)
+
+            # Performance comparison for parallel mode
+            if parallel_config['max_workers'] > 1:
                 # Estimate sequential time (rough approximation)
                 estimated_sequential = total_time * (parallel_config['max_workers'] * 0.6)
                 speedup = estimated_sequential / total_time
 
                 if speedup > 1.2:
                     logging.info("  Estimated speedup: %.1fx faster than sequential", speedup)
+
+            # WAF blocks
+            total_waf = stats.get('waf_blocks', 0)
+            if total_waf > 0:
+                logging.info("  WAF blocks encountered: %d", total_waf)
 
             logging.info("=" * 60)
 
@@ -338,71 +402,28 @@ def main():
                 xmltv_generator.episode_count,
             )
 
-            # Clean up parallel resources
-            if hasattr(guide_parser, 'cleanup'):
-                guide_parser.cleanup()
+            # Clean up download system
+            guide_parser.cleanup()
 
-            # Collect network statistics from appropriate source
-            if parallel_config['enabled'] and hasattr(guide_parser, 'parallel_manager') and guide_parser.parallel_manager:
-                # Get detailed stats from parallel manager
-                parallel_stats = guide_parser.parallel_manager.get_detailed_statistics()
+        finally:
+            # Stop monitoring if enabled
+            if monitor:
+                monitor.stop()
 
-                # Also get stats from main downloader for any sequential fallback operations
-                sequential_stats = downloader.get_stats()
+            # Close download system
+            if base_downloader:
+                base_downloader.close()
 
-                # Combine statistics
-                parallel_requests = parallel_stats.get('total_requests', 0)
-                sequential_requests = sequential_stats.get("total_requests", 0)
-                total_requests = parallel_requests + sequential_requests
-
-                # Downloader statistics with parallel details
-                logging.info("Network statistics (parallel mode):")
-                logging.info("  Total requests: %d (%d parallel, %d sequential)",
-                           total_requests, parallel_requests, sequential_requests)
-                logging.info("  Successful downloads: %d", parallel_stats.get('successful', 0))
-                logging.info("  Failed downloads: %d", parallel_stats.get('failed', 0))
-                logging.info("  From cache: %d", parallel_stats.get('cached', 0))
-
-                bytes_downloaded = parallel_stats.get('bytes_downloaded', 0)
-                if bytes_downloaded > 0:
-                    logging.info("  Data downloaded: %.2f MB", bytes_downloaded / (1024 * 1024))
-
-                # Performance metrics
-                success_rate = parallel_stats.get('success_rate', 0)
-                if success_rate > 0:
-                    logging.info("  Success rate: %.1f%%", success_rate)
-
-                requests_per_second = parallel_stats.get('requests_per_second', 0)
-                if requests_per_second > 0:
-                    logging.info("  Download rate: %.1f requests/second", requests_per_second)
-
-                throughput = parallel_stats.get('throughput_mbps', 0)
-                if throughput > 0:
-                    logging.info("  Throughput: %.2f MB/s", throughput)
-
-                # WAF blocks
-                total_waf = parallel_stats.get('waf_blocks', 0) + sequential_stats.get("waf_blocks", 0)
-                if total_waf > 0:
-                    logging.info("  WAF blocks encountered: %d", total_waf)
-
-            else:
-                # Get stats from sequential downloader
-                final_stats = downloader.get_stats()
-                logging.info("Network statistics (sequential mode):")
-                logging.info("  Total requests: %d", final_stats["total_requests"])
-                if final_stats["waf_blocks"] > 0:
-                    logging.info("  WAF blocks encountered: %d", final_stats["waf_blocks"])
-
-            # Output XMLTV to stdout if not redirected to file
-            if args.output is None:
-                try:
-                    with open(xmltv_file, "r", encoding="utf-8") as f:
-                        print(f.read(), end="")
-                except Exception as e:
-                    logging.error("Could not output XMLTV to stdout: %s", str(e))
-                    return 1
-            else:
-                logging.info("XMLTV output written to: %s", args.output)
+        # Output XMLTV to stdout if not redirected to file
+        if args.output is None:
+            try:
+                with open(xmltv_file, "r", encoding="utf-8") as f:
+                    print(f.read(), end="")
+            except Exception as e:
+                logging.error("Could not output XMLTV to stdout: %s", str(e))
+                return 1
+        else:
+            logging.info("XMLTV output written to: %s", args.output)
 
         logging.info("Script completed successfully")
         logging.info("gracenote2epg session ended successfully")
