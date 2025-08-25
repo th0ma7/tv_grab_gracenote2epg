@@ -2,7 +2,8 @@
 gracenote2epg.gracenote2epg_args - Command line argument parsing
 
 Handles all command-line arguments and validation for the gracenote2epg grabber.
-Provides baseline XMLTV grabber capabilities and lineup testing functionality.
+Provides baseline XMLTV grabber capabilities, lineup testing functionality,
+and parallel download configuration options.
 """
 
 import argparse
@@ -14,7 +15,7 @@ from typing import Optional
 
 
 class ArgumentParser:
-    """Command line argument parser for gracenote2epg"""
+    """Command line argument parser for gracenote2epg with parallel support"""
 
     # Validation patterns
     DAYS_PATTERN = re.compile(r"^[1-9]$|^1[0-4]$")  # 1-14 days
@@ -29,7 +30,7 @@ class ArgumentParser:
         """Create the argument parser with all options"""
         parser = argparse.ArgumentParser(
             prog="gracenote2epg",
-            description="North America TV guide grabber (gracenote.com)",
+            description="North America TV guide grabber (gracenote.com) with parallel download support",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
@@ -47,6 +48,18 @@ Examples:
   gracenote2epg --days 7 --zip 92101 --lineupid CAN-OTAJ3B1M4  # Error: inconsistent
   gracenote2epg --days 7 --zip 92101 --norefresh
   gracenote2epg --days 7 --zip 92101 --refresh 24
+
+Performance Options:
+  gracenote2epg --days 7 --zip 92101 --parallel --workers 6
+  gracenote2epg --days 7 --zip 92101 --no-parallel              # Force sequential
+  gracenote2epg --days 7 --zip 92101 --workers 8 --adaptive     # 8 workers with adaptive adjustment
+  gracenote2epg --days 7 --zip 92101 --rate-limit 10            # Limit to 10 requests/second
+
+  Environment variables (override defaults):
+    GRACENOTE_PARALLEL=true/false      Enable/disable parallel downloads
+    GRACENOTE_MAX_WORKERS=4            Number of parallel workers (1-10)
+    GRACENOTE_ADAPTIVE=true/false      Enable/disable adaptive concurrency
+    GRACENOTE_RATE_LIMIT=5.0           Maximum requests per second
 
 Testing and Validation:
   --show-lineup           Show auto-detected lineup parameters and validation URL
@@ -194,6 +207,54 @@ LineupID Auto-Detection:
             "--basedir", type=Path, help="Base directory for config, cache, and logs"
         )
 
+        # Parallel download options
+        parallel_group = parser.add_argument_group('Performance Options')
+
+        parallel_control = parallel_group.add_mutually_exclusive_group()
+        parallel_control.add_argument(
+            "--parallel",
+            action="store_true",
+            default=None,
+            help="Enable parallel downloading for improved performance (default: enabled)"
+        )
+
+        parallel_control.add_argument(
+            "--no-parallel",
+            action="store_true",
+            default=None,
+            help="Disable parallel downloading, use sequential mode"
+        )
+
+        parallel_group.add_argument(
+            "--workers",
+            type=int,
+            metavar="N",
+            choices=range(1, 11),
+            help="Maximum parallel download workers (1-10, default: 4)"
+        )
+
+        adaptive_control = parallel_group.add_mutually_exclusive_group()
+        adaptive_control.add_argument(
+            "--adaptive",
+            action="store_true",
+            default=None,
+            help="Enable adaptive concurrency adjustment based on server response"
+        )
+
+        adaptive_control.add_argument(
+            "--no-adaptive",
+            action="store_true",
+            default=None,
+            help="Disable adaptive concurrency, use fixed worker count"
+        )
+
+        parallel_group.add_argument(
+            "--rate-limit",
+            type=float,
+            metavar="RPS",
+            help="Maximum requests per second (0.5-20, default: auto)"
+        )
+
         return parser
 
     def parse_args(self, args=None):
@@ -245,6 +306,9 @@ LineupID Auto-Detection:
 
         # Normalize refresh options
         self._normalize_refresh(args)
+
+        # Process parallel download options
+        self._process_parallel_options(args)
 
         return args
 
@@ -406,6 +470,57 @@ LineupID Auto-Detection:
         if hasattr(args, "refresh"):
             del args.refresh
 
+    def _process_parallel_options(self, args):
+        """Process parallel download options"""
+
+        # Process parallel enable/disable
+        if args.no_parallel:
+            args.parallel_enabled = False
+        elif args.parallel:
+            args.parallel_enabled = True
+        else:
+            # Default to enabled
+            args.parallel_enabled = True
+
+        # Clean up redundant flags
+        if hasattr(args, 'parallel'):
+            del args.parallel
+        if hasattr(args, 'no_parallel'):
+            del args.no_parallel
+
+        # Process adaptive mode
+        if hasattr(args, 'no_adaptive') and args.no_adaptive:
+            args.adaptive_enabled = False
+        elif hasattr(args, 'adaptive') and args.adaptive:
+            args.adaptive_enabled = True
+        else:
+            # Default to enabled
+            args.adaptive_enabled = True
+
+        # Clean up redundant flags
+        if hasattr(args, 'adaptive'):
+            del args.adaptive
+        if hasattr(args, 'no_adaptive'):
+            del args.no_adaptive
+
+        # Validate workers
+        if args.workers is not None:
+            if args.workers < 1:
+                args.workers = 1
+            elif args.workers > 10:
+                self.parser.error("Maximum 10 workers allowed to prevent server overload")
+        else:
+            args.workers = 4  # Default
+
+        # Validate rate limit
+        if args.rate_limit is not None:
+            if args.rate_limit < 0.5:
+                self.parser.error("Rate limit must be at least 0.5 requests per second")
+            elif args.rate_limit > 20:
+                self.parser.error("Rate limit cannot exceed 20 requests per second")
+        else:
+            args.rate_limit = None  # Auto-adjust
+
     def get_logging_config(self, args):
         """Determine logging configuration from arguments"""
         config = {
@@ -425,6 +540,15 @@ LineupID Auto-Detection:
             config["quiet"] = True
 
         return config
+
+    def get_parallel_config(self, args):
+        """Get parallel download configuration from parsed arguments"""
+        return {
+            'enabled': getattr(args, 'parallel_enabled', True),
+            'max_workers': getattr(args, 'workers', 4),
+            'adaptive': getattr(args, 'adaptive_enabled', True),
+            'rate_limit': getattr(args, 'rate_limit', None),
+        }
 
     def get_system_defaults(self):
         """Get system-specific default directories with proper DSM6/DSM7 path selection"""
