@@ -454,13 +454,26 @@ class XmltvGenerator:
             logging.exception("Exception in _print_episodes: %s", str(e))
 
     def _write_credits_dtd_compliant(self, fh, episode_data: Dict, use_actor_photos: bool = True):
-        """Write cast and crew credits - DTD compliant with compact image formatting"""
+        """Write cast and crew credits - DTD compliant with proper ordering"""
         credits = episode_data.get("epcredits")
         if credits and isinstance(credits, list):
-            fh.write("\t\t<credits>\n")
 
-            # Valid DTD roles in order
-            valid_roles = {
+            # Valid DTD roles in STRICT ORDER as required by DTD
+            dtd_role_order = [
+                "director",
+                "actor",
+                "writer",
+                "adapter",
+                "producer",
+                "composer",
+                "editor",
+                "presenter",
+                "commentator",
+                "guest"
+            ]
+
+            # Map original roles to DTD roles
+            role_mapping = {
                 "director": "director",
                 "actor": "actor",
                 "writer": "writer",
@@ -471,10 +484,13 @@ class XmltvGenerator:
                 "presenter": "presenter",
                 "commentator": "commentator",
                 "guest": "guest",
-                "voice": "actor",
-                "narrator": "presenter",
-                "host": "presenter",
+                "voice": "actor",         # Map voice to actor
+                "narrator": "presenter",  # Map narrator to presenter
+                "host": "presenter",      # Map host to presenter
             }
+
+            # Group credits by DTD role type
+            grouped_credits = {role: [] for role in dtd_role_order}
 
             for credit in credits:
                 if isinstance(credit, dict):
@@ -484,45 +500,62 @@ class XmltvGenerator:
                     asset_id = credit.get("assetId", "")
 
                     # Map to valid DTD role
-                    if original_role in valid_roles:
-                        dtd_role = valid_roles[original_role]
+                    if original_role in role_mapping and name:
+                        dtd_role = role_mapping[original_role]
+                        grouped_credits[dtd_role].append({
+                            'name': name,
+                            'character': character,
+                            'asset_id': asset_id,
+                            'original_role': original_role
+                        })
 
-                        if dtd_role and name:
-                            # DTD compliant format with compact image formatting (no line breaks)
-                            if character and dtd_role == "actor":
-                                # Actor with character role
-                                fh.write(
-                                    f'\t\t\t<{dtd_role} role="{HtmlUtils.conv_html(character)}">'
-                                )
-                                fh.write(f"{HtmlUtils.conv_html(name)}")
+            # Check if we have any credits to write
+            has_credits = any(len(credits_list) > 0 for credits_list in grouped_credits.values())
 
-                                # Add image directly after name without line break
-                                if use_actor_photos and asset_id:
-                                    photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                    fh.write(f'<image type="person">{photo_url}</image>')
+            if has_credits:
+                fh.write("\t\t<credits>\n")
 
-                                fh.write(f"</{dtd_role}>\n")
-                            else:
-                                # Other roles or actors without character
-                                fh.write(f"\t\t\t<{dtd_role}>")
-                                fh.write(f"{HtmlUtils.conv_html(name)}")
+                # Write credits in DTD-required order
+                for role in dtd_role_order:
+                    credits_for_role = grouped_credits[role]
 
-                                # Add image directly after name without line break
-                                if (
-                                    use_actor_photos
-                                    and asset_id
-                                    and dtd_role in ["actor", "director", "presenter"]
-                                ):
-                                    photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
-                                    fh.write(f'<image type="person">{photo_url}</image>')
+                    for credit_info in credits_for_role:
+                        name = credit_info['name']
+                        character = credit_info['character']
+                        asset_id = credit_info['asset_id']
+                        original_role = credit_info['original_role']
 
-                                fh.write(f"</{dtd_role}>\n")
+                        # DTD compliant format with compact image formatting
+                        if character and role == "actor":
+                            # Actor with character role
+                            fh.write(f'\t\t\t<{role} role="{HtmlUtils.conv_html(character)}">')
+                            fh.write(f"{HtmlUtils.conv_html(name)}")
 
-                            # Log mapping for visibility
-                            if original_role == "host":
-                                logging.debug("Host %s mapped to presenter (DTD compliant)", name)
+                            # Add image directly after name without line break
+                            if use_actor_photos and asset_id:
+                                photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
+                                fh.write(f'<image type="person">{photo_url}</image>')
 
-            fh.write("\t\t</credits>\n")
+                            fh.write(f"</{role}>\n")
+                        else:
+                            # Other roles or actors without character
+                            fh.write(f"\t\t\t<{role}>")
+                            fh.write(f"{HtmlUtils.conv_html(name)}")
+
+                            # Add image directly after name without line break
+                            if (use_actor_photos and asset_id and
+                                role in ["actor", "director", "presenter"]):
+                                photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
+                                fh.write(f'<image type="person">{photo_url}</image>')
+
+                            fh.write(f"</{role}>\n")
+
+                        # Log mapping for visibility (debug level to avoid spam)
+                        if original_role != role:
+                            logging.debug("Credit mapped: %s (%s) -> %s (DTD compliant)",
+                                        name, original_role, role)
+
+                fh.write("\t\t</credits>\n")
 
     def _write_enhanced_ratings(self, fh, episode_data: Dict):
         """Write enhanced rating information with MPAA system support"""

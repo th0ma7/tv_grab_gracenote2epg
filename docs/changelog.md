@@ -10,6 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **IMDB**: Add IMDB support
 - **Rotten Tomatoes**: Add Rotten Tomatoes support
 - **Country**: Use actual country of origin, if unavailable discard
+### Optimisations
+- **Parallel Downloads**: To help significantly reduce download duration
+
+## [1.5.3] - 2025-08-25
+
+### Fixed
+- **Extended Description**: Fixed DTD conformance:
+  Before (non-compliant) :
+  ```xml
+  <credits>
+      <actor>John Doe</actor>
+      <presenter>Host Name</presenter>  <!-- ❌ Wrong order -->
+      <actor>Jane Smith</actor>         <!-- ❌ Actors mixed -->
+  </credits>
+  ```
+  After (DTD compliant) :
+  ```xml
+  <credits>
+      <actor>John Doe</actor>           <!-- ✅ Grouped actors -->
+      <actor>Jane Smith</actor>
+      <presenter>Host Name</presenter>  <!-- ✅ Presenter after -->
+  </credits>
+  ```
+
+### Changed
+- **Documentation**: Removal of unecessary details related to xmltv validation.
 
 ## [1.5.2] - 2025-08-23
 
