@@ -469,7 +469,7 @@ class XmltvGenerator:
                 "editor",
                 "presenter",
                 "commentator",
-                "guest"
+                "guest",
             ]
 
             # Map original roles to DTD roles
@@ -484,9 +484,9 @@ class XmltvGenerator:
                 "presenter": "presenter",
                 "commentator": "commentator",
                 "guest": "guest",
-                "voice": "actor",         # Map voice to actor
+                "voice": "actor",  # Map voice to actor
                 "narrator": "presenter",  # Map narrator to presenter
-                "host": "presenter",      # Map host to presenter
+                "host": "presenter",  # Map host to presenter
             }
 
             # Group credits by DTD role type
@@ -502,12 +502,14 @@ class XmltvGenerator:
                     # Map to valid DTD role
                     if original_role in role_mapping and name:
                         dtd_role = role_mapping[original_role]
-                        grouped_credits[dtd_role].append({
-                            'name': name,
-                            'character': character,
-                            'asset_id': asset_id,
-                            'original_role': original_role
-                        })
+                        grouped_credits[dtd_role].append(
+                            {
+                                "name": name,
+                                "character": character,
+                                "asset_id": asset_id,
+                                "original_role": original_role,
+                            }
+                        )
 
             # Check if we have any credits to write
             has_credits = any(len(credits_list) > 0 for credits_list in grouped_credits.values())
@@ -520,10 +522,10 @@ class XmltvGenerator:
                     credits_for_role = grouped_credits[role]
 
                     for credit_info in credits_for_role:
-                        name = credit_info['name']
-                        character = credit_info['character']
-                        asset_id = credit_info['asset_id']
-                        original_role = credit_info['original_role']
+                        name = credit_info["name"]
+                        character = credit_info["character"]
+                        asset_id = credit_info["asset_id"]
+                        original_role = credit_info["original_role"]
 
                         # DTD compliant format with compact image formatting
                         if character and role == "actor":
@@ -543,8 +545,11 @@ class XmltvGenerator:
                             fh.write(f"{HtmlUtils.conv_html(name)}")
 
                             # Add image directly after name without line break
-                            if (use_actor_photos and asset_id and
-                                role in ["actor", "director", "presenter"]):
+                            if (
+                                use_actor_photos
+                                and asset_id
+                                and role in ["actor", "director", "presenter"]
+                            ):
                                 photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
                                 fh.write(f'<image type="person">{photo_url}</image>')
 
@@ -552,8 +557,12 @@ class XmltvGenerator:
 
                         # Log mapping for visibility (debug level to avoid spam)
                         if original_role != role:
-                            logging.debug("Credit mapped: %s (%s) -> %s (DTD compliant)",
-                                        name, original_role, role)
+                            logging.debug(
+                                "Credit mapped: %s (%s) -> %s (DTD compliant)",
+                                name,
+                                original_role,
+                                role,
+                            )
 
                 fh.write("\t\t</credits>\n")
 
