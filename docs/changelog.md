@@ -1,18 +1,9 @@
 # Changelog
 
-All notable changes to gracenote2epg will be documented in this file.
+All notable changes to gracenote2epg are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Future Development] - TBD
-### Planned Features
-- **IMDB**: Add IMDB support
-- **Rotten Tomatoes**: Add Rotten Tomatoes support
-- **Country**: Use actual country of origin, if unavailable discard
-### Optimisations
-- **Parallel Downloads**: To help significantly reduce download duration
-   Ref.: https://github.com/th0ma7/gracenote2epg/pull/2
 
 ## [1.5.4] - 2025-08-27
 
