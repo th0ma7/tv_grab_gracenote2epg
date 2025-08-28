@@ -34,8 +34,8 @@ gracenote2epg auto-detects your system and uses appropriate directories:
   <setting id="stitle">false</setting>                         <!-- Safe titles (replace special chars) -->
 
   <!-- Extended details and language detection -->
-  <setting id="xdetails">true</setting>                        <!-- Download series details + enhanced metadata -->
-  <setting id="xdesc">true</setting>                           <!-- Use enhanced descriptions (see below) -->
+  <setting id="xdetails">true</setting>                        <!-- Use extended data (credits, images, categories) -->
+  <setting id="xdesc">true</setting>                           <!-- Use extended descriptions + enhanced info -->
   <setting id="langdetect">true</setting>                      <!-- Enable automatic language detection -->
 
   <!-- Display options -->
@@ -117,38 +117,29 @@ tv_grab_gracenote2epg --show-lineup --postal J3B1M4 --debug
 <setting id="days">7</setting>         <!-- 7 days of guide data -->
 ```
 
-### Extended Details
+### Extended Details Configuration
 
-#### xdetails
-**Download series details** from the API for enhanced metadata
-```xml
-<setting id="xdetails">true</setting>  <!-- Enable extended data download -->
-```
+#### Understanding xdetails vs xdesc
 
-When enabled:
-- Downloads detailed series information from the API
-- Adds cast and crew with photos
-- Includes original air dates
-- Provides enhanced ratings (MPAA system)
-- Adds technical details (language, country, video/audio info)
-- Enables extended series descriptions (if available)
+These two settings work **independently** to control different aspects of extended functionality:
 
-#### xdesc  
-**Description mode and enhancements** - Controls BOTH description (e.g. extended if available) AND additional info (e.g. `• new | live | CC`)
-```xml
-<setting id="xdesc">true</setting>     <!-- Use enhanced descriptions with additional info -->
-<setting id="xdesc">false</setting>    <!-- Use basic descriptions WITHOUT additional info -->
-```
+**Automatic API Download Logic**: API downloads occur when **either** `xdetails=true` **OR** `xdesc=true`
+- `xdetails=true` triggers downloads and uses extended metadata (credits, images, categories)
+- `xdesc=true` triggers downloads for enhanced description (year, rating, flags, original air dates)
 
-When `xdesc=true`:
-- Uses extended series descriptions when available (falls back to basic episode description if extended not available)
-- **ADDS enhanced info** to descriptions: year, rating, NEW/LIVE/PREMIERE flags, CC/HD tags
+However, the **usage** of downloaded data depends on the specific setting:
 
-When `xdesc=false`:
-- Uses basic episode descriptions from the default guide
-- **NO additional info added** - descriptions are displayed exactly as received
-- Clean, simple descriptions without any enhancements
-- Ideal for users who prefer minimal descriptions or when Kodi/Plex adds its own metadata
+### Configuration Matrix
+
+| xdetails | xdesc | API Downloads | Credits | Extended Categories | Series Images | Description Enhancement |
+|----------|-------|---------------|---------|-------------------|---------------|----------------------|
+| `false`  | `false` | ❌ No         | ❌ No   | ❌ Basic only      | ❌ Episode only | ❌ Basic guide text  |
+| `false`  | `true`  | ✅ Yes*       | ❌ No   | ❌ Basic only      | ❌ Episode only | ✅ Basic + enhancements* |
+| `true`   | `false` | ✅ Yes        | ✅ Yes  | ✅ Extended        | ✅ Series     | ❌ Basic guide text  |
+| `true`   | `true`  | ✅ Yes        | ✅ Yes  | ✅ Extended        | ✅ Series     | ✅ Extended + enhancements |
+
+*API downloads automatically triggered when `xdesc=true` to gather enhancement data (year, rating, flags, original air dates)
+*Enhancement includes: year, rating, flags (NEW/LIVE/PREMIERE), CC/HD tags
 
 **Examples of description differences**:
 
@@ -157,11 +148,11 @@ xdesc=true:  "A detective investigates a mysterious case. • 2023 | Rated: TV-1
 xdesc=false: "A detective investigates a mysterious case."
 ```
 
-**Interaction with xdetails**:
-- `xdetails=false, xdesc=false`: Basic descriptions, no downloads, no enhancements
-- `xdetails=false, xdesc=true`: Basic descriptions WITH enhancements (year, flags, etc.)
-- `xdetails=true, xdesc=false`: Downloads extended data but uses basic descriptions without enhancements
-- `xdetails=true, xdesc=true`: Full functionality - extended descriptions with all enhancements
+**Use Cases**:
+- **`xdetails=true, xdesc=false`**: Want full metadata (credits, images, categories) but clean, simple descriptions
+- **`xdetails=false, xdesc=true`**: Want enhanced descriptions only (API downloads occur for enhancement data, but no credits/extended categories/series images)
+- **`xdetails=true, xdesc=true`**: Full functionality (recommended for most users)
+- **`xdetails=false, xdesc=false`**: Minimal setup (fastest, lowest bandwidth, no API downloads)
 
 #### langdetect
 **Automatic language detection** (requires `langdetect` library)
@@ -300,7 +291,7 @@ Same format as `relogs` - controls how long to keep XMLTV backup files.
   <!-- Basic guide settings -->
   <setting id="zipcode">92101</setting>
   <setting id="lineupid">auto</setting>
-  <setting id="days">7</setting>
+  <setting id="days">14</setting>
 
   <!-- Extended features -->
   <setting id="xdetails">true</setting>
@@ -308,57 +299,11 @@ Same format as `relogs` - controls how long to keep XMLTV backup files.
   <setting id="langdetect">true</setting>
 
   <!-- Cache and retention -->
-  <setting id="redays">7</setting>
+  <setting id="redays">14</setting>
   <setting id="refresh">48</setting>
   <setting id="logrotate">true</setting>
   <setting id="relogs">30</setting>
   <setting id="rexmltv">7</setting>
-</settings>
-```
-
-### Minimal Descriptions Setup
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<settings version="5">
-  <!-- Basic guide settings -->
-  <setting id="zipcode">92101</setting>
-  <setting id="lineupid">auto</setting>
-  <setting id="days">7</setting>
-
-  <!-- Minimal descriptions without enhancements -->
-  <setting id="xdetails">false</setting>
-  <setting id="xdesc">false</setting>
-  <setting id="langdetect">false</setting>
-
-  <!-- Cache and retention -->
-  <setting id="redays">7</setting>
-  <setting id="refresh">48</setting>
-  <setting id="logrotate">true</setting>
-  <setting id="relogs">30</setting>
-  <setting id="rexmltv">7</setting>
-</settings>
-```
-
-### High-Volume Server
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<settings version="5">
-  <!-- Extended cache for stability -->
-  <setting id="zipcode">90210</setting>
-  <setting id="lineupid">auto</setting>
-  <setting id="days">14</setting>
-
-  <!-- Full features -->
-  <setting id="xdetails">true</setting>
-  <setting id="xdesc">true</setting>
-  <setting id="langdetect">true</setting>
-  
-  <!-- Cache and retention -->
-  <setting id="redays">21</setting>
-  <setting id="refresh">24</setting>
-  <setting id="logrotate">daily</setting>
-  <setting id="relogs">quarterly</setting>
-  <setting id="rexmltv">monthly</setting>
 </settings>
 ```
 
@@ -450,20 +395,6 @@ grep -A 20 "Configuration values processed" ~/gracenote2epg/log/gracenote2epg.lo
 ## Configuration Migration
 
 gracenote2epg automatically migrates from older configuration formats:
-
-### Legacy Settings (Automatically Migrated)
-```xml
-<!-- Old format (still works) -->
-<setting id="auto_lineup">true</setting>
-<setting id="lineupcode">OTA</setting>
-<setting id="lineup">CAN-OTAJ3B1M4</setting>
-<setting id="device">-</setting>
-
-<!-- Migrated to new format -->
-<setting id="lineupid">auto</setting>
-```
-
-### Backup and Migration
 - Automatic backup of old configuration created
 - Migration messages logged at INFO level
 - New configuration format provides cleaner organization

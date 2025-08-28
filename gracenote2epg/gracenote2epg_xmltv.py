@@ -298,7 +298,9 @@ class XmltvGenerator:
                             fh.write(f'\t\t<date>{episode_data["epyear"]}</date>\n')
 
                         # 6. CATEGORY*
-                        self._write_categories(fh, episode_data, ep_genre, detected_language)
+                        self._write_categories(
+                            fh, episode_data, ep_genre, detected_language, use_extended_details
+                        )
 
                         # 7. KEYWORD* (not used)
 
@@ -317,7 +319,9 @@ class XmltvGenerator:
                             )
 
                         # 11. ICON*
-                        self._write_program_icons(fh, episode_data, ep_icon, episode_key)
+                        self._write_program_icons(
+                            fh, episode_data, ep_icon, episode_key, use_extended_details
+                        )
 
                         # 12. URL* (not used)
 
@@ -453,8 +457,14 @@ class XmltvGenerator:
         except Exception as e:
             logging.exception("Exception in _print_episodes: %s", str(e))
 
-    def _write_credits_dtd_compliant(self, fh, episode_data: Dict, use_actor_photos: bool = True):
+    def _write_credits_dtd_compliant(
+        self, fh, episode_data: Dict, use_extended_details: bool = True
+    ):
         """Write cast and crew credits - DTD compliant with proper ordering"""
+        # Only write credits if extended details are enabled
+        if not use_extended_details:
+            return
+
         credits = episode_data.get("epcredits")
         if credits and isinstance(credits, list):
 
@@ -534,7 +544,7 @@ class XmltvGenerator:
                             fh.write(f"{HtmlUtils.conv_html(name)}")
 
                             # Add image directly after name without line break
-                            if use_actor_photos and asset_id:
+                            if use_extended_details and asset_id:
                                 photo_url = f"https://zap2it.tmsimg.com/assets/{asset_id}.jpg"
                                 fh.write(f'<image type="person">{photo_url}</image>')
 
@@ -546,7 +556,7 @@ class XmltvGenerator:
 
                             # Add image directly after name without line break
                             if (
-                                use_actor_photos
+                                use_extended_details
                                 and asset_id
                                 and role in ["actor", "director", "presenter"]
                             ):
@@ -795,7 +805,14 @@ class XmltvGenerator:
             )
             return base_desc
 
-    def _write_program_icons(self, fh, episode_data: Dict, ep_icon: str, episode_key: str):
+    def _write_program_icons(
+        self,
+        fh,
+        episode_data: Dict,
+        ep_icon: str,
+        episode_key: str,
+        use_extended_details: bool = True,
+    ):
         """Write program icon information"""
         if episode_key.startswith("MV"):  # Movie
             if episode_data.get("epthumb"):
@@ -804,7 +821,8 @@ class XmltvGenerator:
                 )
         else:  # TV Show
             if ep_icon == "1":  # Series + episode icons
-                if episode_data.get("epimage"):
+                # Only use epimage (from extended details) if xdetails=true
+                if use_extended_details and episode_data.get("epimage"):
                     fh.write(
                         f'\t\t<icon src="https://zap2it.tmsimg.com/assets/{episode_data["epimage"]}.jpg" />\n'
                     )
@@ -826,13 +844,19 @@ class XmltvGenerator:
         return False
 
     def _write_categories(
-        self, fh, episode_data: Dict, ep_genre: str, detected_language: str = "en"
+        self,
+        fh,
+        episode_data: Dict,
+        ep_genre: str,
+        detected_language: str = "en",
+        use_extended_details: bool = True,
     ):
         """Write program categories/genres with translation support and proper capitalization"""
         if ep_genre == "0":  # No genres
             return
 
-        genres = self._get_genre_list(episode_data, ep_genre)
+        # Pass use_extended_details parameter
+        genres = self._get_genre_list(episode_data, ep_genre, use_extended_details)
         if genres:
             for genre in genres:
                 # Clean before translating (no HTML encoding yet)
@@ -855,10 +879,17 @@ class XmltvGenerator:
 
                 fh.write(f'\t\t<category lang="{detected_language}">{html_safe_genre}</category>\n')
 
-    def _get_genre_list(self, episode_data: Dict, ep_genre: str) -> List[str]:
+    def _get_genre_list(
+        self, episode_data: Dict, ep_genre: str, use_extended_details: bool = True
+    ) -> List[str]:
         """Get processed genre list based on configuration"""
         ep_filter = episode_data.get("epfilter", [])
-        ep_genres = episode_data.get("epgenres", [])
+
+        # Only use epgenres (from extended details) if xdetails=true
+        if use_extended_details:
+            ep_genres = episode_data.get("epgenres", [])
+        else:
+            ep_genres = []  # Don't use extended genres if xdetails=false
 
         if not isinstance(ep_filter, list):
             ep_filter = []

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Country**: Use actual country of origin, if unavailable discard
 ### Optimisations
 - **Parallel Downloads**: To help significantly reduce download duration
+   Ref.: https://github.com/th0ma7/gracenote2epg/pull/2
+
+## [1.5.4] - 2025-08-27
+
+### Fixed
+- **Extended Details**: Fixed issue where `xdetails=true` with `xdesc=false` incorrectly omitted credits, extended categories, and series images.
 
 ## [1.5.3] - 2025-08-25
 
