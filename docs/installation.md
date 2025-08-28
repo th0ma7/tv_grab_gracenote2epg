@@ -24,10 +24,10 @@ pip install gracenote2epg[translations]  # Translation support only
 #### Latest Stable Release
 ```bash
 # Install latest stable release from GitHub
-pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5.3"
+pip install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5.4"
 
 # Basic installation from GitHub
-pip install "gracenote2epg @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5.3"
+pip install "gracenote2epg @ git+https://github.com/th0ma7/gracenote2epg.git@v1.5.4"
 ```
 
 #### Latest Development Version
@@ -51,13 +51,13 @@ pip install .        # Basic installation
 ### Method 4: Manual Installation (Source Distribution)
 ```bash
 # Download source from GitHub releases
-wget https://github.com/th0ma7/gracenote2epg/archive/v1.5.3.tar.gz -O gracenote2epg-1.5.3.tar.gz
+wget https://github.com/th0ma7/gracenote2epg/archive/v1.5.4.tar.gz -O gracenote2epg-1.5.4.tar.gz
 
 # Install into /usr/local/
-sudo tar -xzf gracenote2epg-1.5.3.tar.gz -C /usr/local/
+sudo tar -xzf gracenote2epg-1.5.4.tar.gz -C /usr/local/
 
 # Create a generic gracenote2epg symbolic link
-sudo ln -sf /usr/local/gracenote2epg-1.5.3 /usr/local/gracenote2epg
+sudo ln -sf /usr/local/gracenote2epg-1.5.4 /usr/local/gracenote2epg
 
 # Make tv_grab_gracenote2epg available in /usr/local/bin
 sudo ln -sf /usr/local/gracenote2epg/tv_grab_gracenote2epg /usr/local/bin
@@ -119,6 +119,9 @@ tv_grab_gracenote2epg --version
 # Install gracenote2epg from PyPI (recommended) in TVheadend environment
 sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install gracenote2epg[full]'
 
+# Install a specific version of gracenote2epg from Pypi in TVheadend environment
+sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install "gracenote2epg[full]==1.5.4"'
+
 # Install latest git snapshot
 sudo su -s /bin/bash sc-tvheadend -c '/var/packages/tvheadend/target/env/bin/pip3 install "gracenote2epg[full] @ git+https://github.com/th0ma7/gracenote2epg.git"'
 
@@ -166,7 +169,7 @@ python -m gracenote2epg --version    # Module execution
 ```bash
 # Check if package is installed
 pip list | grep gracenote2epg
-# Expected output: gracenote2epg    1.5.3
+# Expected output: gracenote2epg    1.5.4
 
 # Check version
 tv_grab_gracenote2epg --version
