@@ -106,6 +106,11 @@ def get_parallel_config(args) -> dict:
     # Get optimized performance config if max_workers not set
     if base_config['max_workers'] is None:
         perf_config = get_performance_config()
+        # Ensure we don't fall into sequential mode unless explicitly requested
+        if perf_config.get('max_workers', 1) == 1 and base_config.get('enabled', True):
+            # Override single worker default with adaptive mode
+            perf_config['max_workers'] = 4  # Reasonable default
+            logging.debug("Overriding single worker default with adaptive mode (4 workers)")
         base_config.update(perf_config)
 
     # Force sequential mode if disabled
