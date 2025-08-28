@@ -110,11 +110,15 @@ Also note that the gracenote2epg auto-creates a configuration file on first run.
 - **[TVheadend Integration](https://github.com/th0ma7/gracenote2epg/blob/main/docs/tvheadend.md)** - TVheadend setup, EPG migration, and troubleshooting
 - **[Troubleshooting](https://github.com/th0ma7/gracenote2epg/blob/main/docs/troubleshooting.md)** - General issues and solutions
 
+## 🛣️ Development & Roadmap
+
+- **[Development Roadmap](https://github.com/th0ma7/gracenote2epg/blob/main/docs/roadmap.md)** - Feature roadmap, upcoming versions, and planned enhancements
+- **[Contributing Guide](https://github.com/th0ma7/gracenote2epg/blob/main/docs/development.md)** - Contributing, testing, XMLTV validation, and development setup
+
 ### Advanced Topics
 
 - **[Cache & Retention Policies](https://github.com/th0ma7/gracenote2epg/blob/main/docs/cache-retention.md)** - Managing cache and log retention
 - **[Log Rotation](https://github.com/th0ma7/gracenote2epg/blob/main/docs/log-rotation.md)** - Built-in log rotation system
-- **[Development](https://github.com/th0ma7/gracenote2epg/blob/main/docs/development.md)** - Contributing, testing, XMLTV validation, and development setup
 - **[Development Scripts](https://github.com/th0ma7/gracenote2epg/blob/main/scripts/README.md)** - Utility scripts for testing and distribution
 
 ## 🆘 Need Help?
