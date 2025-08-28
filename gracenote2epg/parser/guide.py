@@ -1,8 +1,7 @@
 """
-gracenote2epg.parser.guide - Unified guide data parsing
+gracenote2epg.parser.guide - Unified guide data parsing with improved progress reporting
 
-Single unified parser using parallel download architecture.
-Supports both single-worker (sequential behavior) and multi-worker (parallel) modes.
+Fixed version with better progress reporting and single manager architecture.
 """
 
 import calendar
@@ -13,14 +12,17 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Any
 
-from ..downloader.parallel import ParallelDownloadManager, AdaptiveParallelDownloader
 from ..downloader.base import OptimizedDownloader
+from ..downloader.parallel import ParallelDownloadManager, AdaptiveParallelDownloader
+from ..downloader.monitoring import EventDrivenMonitor, EventType
 from ..tvheadend import TvheadendClient
 from ..utils import CacheManager, TimeUtils
 
 
-class GuideParser:
-    """Unified TV guide parser with adaptive parallel downloading"""
+class UnifiedGuideParser:
+    """
+    Unified TV guide parser with improved progress reporting and single manager architecture
+    """
 
     def __init__(
         self,
@@ -28,10 +30,16 @@ class GuideParser:
         base_downloader: OptimizedDownloader,
         tvh_client: Optional[TvheadendClient] = None,
         max_workers: int = 4,
-        enable_adaptive: bool = True
+        enable_adaptive: bool = True,
+        enable_monitoring: bool = False,
+        monitoring_config: Optional[Dict] = None,
+        # Accept pre-created managers to avoid duplication
+        guide_manager: Optional[ParallelDownloadManager] = None,
+        series_manager: Optional[ParallelDownloadManager] = None,
+        monitor: Optional[EventDrivenMonitor] = None
     ):
         """
-        Initialize unified guide parser
+        Initialize unified guide parser with single manager architecture
 
         Args:
             cache_manager: Cache manager instance
@@ -39,19 +47,60 @@ class GuideParser:
             tvh_client: Optional TVheadend client
             max_workers: Maximum parallel workers (1 = sequential behavior)
             enable_adaptive: Enable adaptive worker adjustment
+            enable_monitoring: Enable real-time monitoring
+            monitoring_config: Configuration for monitoring (port, web API, etc.)
+            guide_manager: Pre-created guide manager (prevents duplication)
+            series_manager: Pre-created series manager (prevents duplication)
+            monitor: Pre-created monitor (prevents duplication)
         """
         self.cache_manager = cache_manager
         self.base_downloader = base_downloader
         self.tvh_client = tvh_client
         self.schedule: Dict = {}
 
-        # Initialize parallel download manager
-        self.parallel_manager = ParallelDownloadManager(
-            max_workers=max_workers,
-            max_retries=3,
-            base_delay=0.5,
-            enable_rate_limiting=True
-        )
+        # Store configuration
+        self.max_workers = max_workers
+        self.enable_monitoring = enable_monitoring
+        self.monitoring_config = monitoring_config or {}
+
+        # Use provided managers or create new ones (but don't log if provided)
+        if monitor:
+            self.monitor = monitor
+        elif enable_monitoring:
+            config = monitoring_config or {}
+            self.monitor = EventDrivenMonitor(
+                enable_console=config.get('enable_console', True),
+                enable_web_api=config.get('enable_web_api', False),
+                web_port=config.get('web_port', 9989),
+                metrics_file=config.get('metrics_file', None)
+            )
+        else:
+            self.monitor = None
+
+        # Use provided managers or create new ones
+        if guide_manager:
+            self.guide_manager = guide_manager
+        else:
+            self.guide_manager = ParallelDownloadManager(
+                max_workers=max_workers,
+                max_retries=3,
+                base_delay=0.5,
+                enable_rate_limiting=True,
+                monitor=self.monitor,
+                log_initialization=True
+            )
+
+        if series_manager:
+            self.series_manager = series_manager
+        else:
+            self.series_manager = ParallelDownloadManager(
+                max_workers=max_workers,
+                max_retries=3,
+                base_delay=0.5,
+                enable_rate_limiting=True,
+                monitor=self.monitor,
+                log_initialization=False
+            )
 
         # Initialize adaptive downloader if enabled
         self.adaptive_downloader = None
@@ -61,23 +110,56 @@ class GuideParser:
                 max_workers=max_workers
             )
 
-        # Log initialization
-        mode = "sequential" if max_workers == 1 else "parallel"
-        adaptive_str = " with adaptive adjustment" if enable_adaptive and max_workers > 1 else ""
-        logging.info(
-            "Guide parser initialized: %s mode (%d workers)%s",
-            mode, max_workers, adaptive_str
-        )
+        # Connect base downloader to monitoring if available
+        if self.monitor:
+            self.base_downloader.set_monitor_callback(self._base_downloader_event_callback)
+
+        # Only log initialization if we created new managers
+        if not (guide_manager and series_manager):
+            mode = "sequential" if max_workers == 1 else "parallel"
+            adaptive_str = " with adaptive adjustment" if enable_adaptive and max_workers > 1 else ""
+            monitoring_str = " with real-time monitoring" if enable_monitoring else ""
+
+            logging.info(
+                "Unified guide parser initialized: %s mode (%d workers)%s%s",
+                mode, max_workers, adaptive_str, monitoring_str
+            )
+
+    def _base_downloader_event_callback(self, event_type: str, worker_id: int, **data):
+        """Callback to receive events from base downloader"""
+        if not self.monitor:
+            return
+
+        if event_type == 'waf_detected':
+            self.monitor.emit_event(EventType.WAF_DETECTED, worker_id, **data)
+        elif event_type == 'rate_limit':
+            self.monitor.emit_event(EventType.RATE_LIMIT_HIT, worker_id, **data)
+        elif event_type == 'request_success':
+            self.monitor.emit_event(EventType.TASK_COMPLETED, worker_id, **data)
+        elif event_type == 'request_failed':
+            self.monitor.emit_event(EventType.TASK_FAILED, worker_id, **data)
+
+    def start_monitoring(self):
+        """Start real-time monitoring if configured"""
+        if self.monitor:
+            self.monitor.start()
+            logging.info("Real-time monitoring started")
+
+    def stop_monitoring(self):
+        """Stop real-time monitoring if running"""
+        if self.monitor:
+            self.monitor.stop()
+            logging.info("Real-time monitoring stopped")
 
     def download_and_parse_guide(
-        self, 
-        grid_time_start: float, 
-        day_hours: int, 
-        config_manager, 
+        self,
+        grid_time_start: float,
+        day_hours: int,
+        config_manager,
         refresh_hours: int = 48
     ) -> bool:
         """
-        Unified guide download and parsing method
+        Unified guide download and parsing with improved progress reporting
 
         Args:
             grid_time_start: Start time for guide data
@@ -89,22 +171,34 @@ class GuideParser:
             Success status
         """
         logging.info("Starting unified guide download and parsing")
-        
+
         # Get lineup configuration
         lineup_config = config_manager.get_lineup_config()
-        
-        logging.info("  Workers: %d", self.parallel_manager.max_workers)
+
+        logging.info("  Workers: %d", self.max_workers)
         logging.info("  Refresh window: first %d hours will be re-downloaded", refresh_hours)
         logging.info("  Guide duration: %d blocks (%d hours)", day_hours, day_hours * 3)
 
-        # Prepare download tasks
+        # Prepare download tasks and count what will actually be downloaded
         tasks = []
+        download_tasks = 0
+        cached_tasks = 0
         grid_time = grid_time_start
 
         for count in range(day_hours):
             # Generate standardized filename
             standard_block_time = TimeUtils.get_standard_block_time(grid_time)
             filename = standard_block_time.strftime("%Y%m%d%H") + ".json.gz"
+
+            # Check if this will be downloaded or cached
+            cached_content = self.cache_manager.load_guide_block(filename)
+            time_from_now = grid_time - time.time()
+            needs_refresh = time_from_now < (refresh_hours * 3600)
+
+            if cached_content and not needs_refresh:
+                cached_tasks += 1
+            else:
+                download_tasks += 1
 
             # Build download URL
             url = self._build_gracenote_url(lineup_config, grid_time)
@@ -118,27 +212,51 @@ class GuideParser:
 
             grid_time = grid_time + 10800  # Next 3-hour block
 
-        # Progress callback
+        # Log actual download vs cache stats
+        if download_tasks > 0:
+            logging.info("Starting parallel guide block download: %d blocks, %d workers",
+                        download_tasks, self.max_workers)
+            if cached_tasks > 0:
+                logging.info("  Will download: %d new blocks, use %d cached blocks",
+                            download_tasks, cached_tasks)
+        else:
+            logging.info("All %d blocks found in cache, no downloads needed", cached_tasks)
+
+        # Dynamic progress callback based on download count
         def progress_callback(completed, total):
-            if completed % 10 == 0 or completed == total:
+            if total == 0:
+                return
+
+            # Calculate dynamic interval (5% or at least every 5 items, max every 100 items)
+            interval = max(5, min(total // 20, 100))  # 5% or reasonable bounds
+
+            if completed % interval == 0 or completed == total:
                 percent = (completed / total * 100) if total > 0 else 0
                 logging.info("Guide download progress: %d/%d blocks (%.1f%%)",
                            completed, total, percent)
 
-        # Download blocks using parallel manager
-        results = self.parallel_manager.download_guide_blocks(
+        # Download blocks using guide manager
+        download_start = time.time()
+        results = self.guide_manager.download_guide_blocks(
             tasks=tasks,
             cache_manager=self.cache_manager,
             config_manager=config_manager,
             refresh_hours=refresh_hours,
             progress_callback=progress_callback
         )
+        download_time = time.time() - download_start
 
         # Parse downloaded/cached blocks
+        parse_start = time.time()
         parse_success = 0
         parse_failed = 0
 
-        for task in tasks:
+        # Create parsing progress tracker if monitoring enabled
+        parsing_tracker = None
+        if self.monitor:
+            parsing_tracker = self.monitor.create_progress_tracker("Parsing Guide", len(tasks))
+
+        for task_index, task in enumerate(tasks):
             filename = task['filename']
             count = task['count']
 
@@ -158,44 +276,55 @@ class GuideParser:
 
                     parse_success += 1
 
+                    if parsing_tracker:
+                        parsing_tracker.increment()
+
                 except Exception as e:
                     logging.warning("Parse error for %s: %s", filename, str(e))
                     parse_failed += 1
+
+                    if parsing_tracker:
+                        parsing_tracker.increment()
             else:
                 logging.warning("No content available for %s", filename)
                 parse_failed += 1
 
-        # Get and log statistics
-        stats = self.parallel_manager.get_detailed_statistics()
-        
+                if parsing_tracker:
+                    parsing_tracker.increment()
+
+        parse_time = time.time() - parse_start
+
+        # Get statistics from guide manager
+        guide_stats = self.guide_manager.get_detailed_statistics()
+
         total_blocks = day_hours
         success_rate = (parse_success / total_blocks * 100) if total_blocks > 0 else 0
 
-        logging.info("Guide download completed:")
+        logging.info("Guide download and parsing completed:")
+        logging.info("  Total time: %.1f seconds (download: %.1f, parsing: %.1f)",
+                    download_time + parse_time, download_time, parse_time)
         logging.info("  Blocks processed: %d total (%d parsed, %d failed)",
                     total_blocks, parse_success, parse_failed)
-        logging.info("  Downloads: %d new, %d cached, %d failed",
-                    stats['successful'], stats['cached'], stats['failed'])
-        
-        if stats['bytes_downloaded'] > 0:
-            logging.info("  Performance: %.1f MB downloaded in %.1f seconds",
-                        stats['bytes_downloaded'] / (1024 * 1024), stats['total_time'])
-        
-        logging.info("  Success rate: %.1f%%", success_rate)
+        logging.info("  Network stats: %d new, %d cached, %d failed",
+                    guide_stats['successful'], guide_stats['cached'], guide_stats['failed'])
 
-        if stats.get('waf_blocks', 0) > 0:
-            logging.warning("  WAF blocks encountered: %d", stats['waf_blocks'])
+        if guide_stats['bytes_downloaded'] > 0:
+            logging.info("  Data downloaded: %.1f MB at %.2f MB/s",
+                        guide_stats['bytes_downloaded'] / (1024 * 1024),
+                        guide_stats.get('throughput_mbps', 0))
+
+        logging.info("  Success rate: %.1f%%", success_rate)
 
         return success_rate >= 80
 
     def download_and_parse_extended_details(self) -> bool:
         """
-        Download and parse extended program details using parallel manager
+        Download and parse extended program details with improved progress reporting
 
         Returns:
-            Success status
+            Success status based on overall completion, not just new downloads
         """
-        logging.info("Starting extended details download")
+        logging.info("Starting extended details download with enhanced monitoring")
 
         # Collect unique series IDs
         unique_series = set()
@@ -219,23 +348,63 @@ class GuideParser:
             logging.info("No series found for extended details download")
             return True
 
-        # Progress callback
+        # Count what will actually be downloaded vs cached
+        download_count = 0
+        cached_count = 0
+
+        for series_id in series_list:
+            cached_details = self.cache_manager.load_series_details(series_id)
+            if cached_details:
+                cached_count += 1
+            else:
+                download_count += 1
+
+        # Log actual download vs cache stats
+        if download_count > 0:
+            logging.info("Starting parallel series details download: %d series, %d workers",
+                        download_count, min(self.max_workers, 2))
+            if cached_count > 0:
+                logging.info("  Will download: %d new series, use %d cached series",
+                            download_count, cached_count)
+        else:
+            logging.info("All %d series found in cache, no downloads needed", cached_count)
+
+        # Dynamic progress callback based on actual download count
         def progress_callback(completed, total):
-            if completed % 50 == 0 or completed == total:
+            if total == 0:
+                return
+
+            # Calculate dynamic interval (5% or at least every 5 items, max every 50 items)
+            interval = max(5, min(total // 20, 50))  # 5% or reasonable bounds
+
+            if completed % interval == 0 or completed == total:
                 percent = (completed / total * 100) if total > 0 else 0
                 logging.info("Series details progress: %d/%d (%.1f%%)",
                            completed, total, percent)
 
-        # Download series details in parallel
-        series_details = self.parallel_manager.download_series_details(
+        # Download series details using series manager
+        download_start = time.time()
+        series_details = self.series_manager.download_series_details(
             series_list=series_list,
             cache_manager=self.cache_manager,
             progress_callback=progress_callback
         )
+        download_time = time.time() - download_start
 
-        # Process downloaded details
+        # Process downloaded details with enhanced monitoring
+        process_start = time.time()
         processed_count = 0
         failed_count = 0
+
+        # Create processing progress tracker if monitoring enabled
+        processing_tracker = None
+        if self.monitor:
+            total_episodes = sum(
+                1 for station in self.schedule
+                for episode in self.schedule[station]
+                if not episode.startswith("ch") and self.schedule[station][episode].get("epseries")
+            )
+            processing_tracker = self.monitor.create_progress_tracker("Processing Details", total_episodes)
 
         for station in self.schedule:
             sdict = self.schedule[station]
@@ -250,34 +419,54 @@ class GuideParser:
                                 edict, series_details[series_id], series_id
                             )
                             processed_count += 1
+
+                            if processing_tracker:
+                                processing_tracker.increment()
+
                         except Exception as e:
                             logging.warning("Error processing series %s: %s", series_id, str(e))
                             failed_count += 1
 
-        # Get statistics
-        stats = self.parallel_manager.get_detailed_statistics()
+                            if processing_tracker:
+                                processing_tracker.increment()
 
-        # Summary
+        process_time = time.time() - process_start
+
+        # Get statistics from series manager
+        series_stats = self.series_manager.get_detailed_statistics()
+
+        # Enhanced summary logging
+        total_time = download_time + process_time
         logging.info("Extended details completed:")
+        logging.info("  Total time: %.1f seconds (download: %.1f, processing: %.1f)",
+                    total_time, download_time, process_time)
         logging.info("  Unique series: %d", len(unique_series))
-        logging.info("  Downloaded: %d, Cached: %d, Failed: %d",
-                    stats['successful'], stats['cached'], stats['failed'])
+        logging.info("  Network stats: %d downloaded, %d cached, %d failed",
+                    series_stats['successful'], series_stats['cached'], series_stats['failed'])
         logging.info("  Episodes processed: %d", processed_count)
-        
-        if stats['bytes_downloaded'] > 0:
-            logging.info("  Performance: %.1f MB in %.1f seconds",
-                        stats['bytes_downloaded'] / (1024 * 1024), stats['total_time'])
 
-        # Adaptive performance summary
-        if self.adaptive_downloader:
-            perf_summary = self.adaptive_downloader.get_performance_summary()
-            if perf_summary:
-                logging.info("  Adaptive concurrency: %d workers (adjusted %d times)",
-                           perf_summary['current_workers'],
-                           perf_summary['total_adjustments'])
+        if series_stats['bytes_downloaded'] > 0:
+            logging.info("  Data downloaded: %.1f MB at %.2f MB/s",
+                        series_stats['bytes_downloaded'] / (1024 * 1024),
+                        series_stats.get('throughput_mbps', 0))
 
-        success_rate = (stats['successful'] / len(series_list) * 100) if series_list else 100
-        return success_rate >= 70
+        # Success detection logic
+        total_completed = len(series_details)  # This includes both downloaded and cached
+        total_requested = len(series_list)
+
+        if total_requested == 0:
+            return True
+
+        completion_rate = (total_completed / total_requested) * 100
+        success_threshold = 90.0
+        is_successful = completion_rate >= success_threshold
+
+        logging.info("  Completion rate: %.1f%% (%d/%d series have data)",
+                    completion_rate, total_completed, total_requested)
+        logging.info("  Success threshold: %.1f%% - Status: %s",
+                    success_threshold, "SUCCESS" if is_successful else "ISSUES")
+
+        return is_successful
 
     def _build_gracenote_url(self, lineup_config: Dict, grid_time: float) -> str:
         """Build Gracenote URL with lineup configuration"""
@@ -352,7 +541,7 @@ class GuideParser:
             for station in ch_guide.get("channels", []):
                 station_id = station.get("channelId")
 
-                if self._should_process_station(station):
+                if self._should_process_station(station) and station_id in self.schedule:
                     episodes = station.get("events", [])
 
                     for episode in episodes:
@@ -429,6 +618,10 @@ class GuideParser:
                             check_tba = "Unsafe"
                         elif ep_data["eptitle"] and "TBA" in ep_data["eptitle"]:
                             check_tba = "Unsafe"
+
+                else:
+                    if station_id not in self.schedule:
+                        logging.debug("Station %s filtered out or not found in schedule", station_id)
 
         except Exception as e:
             logging.exception("Exception in parse_episodes: %s", str(e))
@@ -508,7 +701,7 @@ class GuideParser:
                         try:
                             tba_check = airing.get("episodeTitle", "")
                             if tba_check and "TBA" in tba_check:
-                                logging.info("  Found TBA listing in %s", series_id)
+                                logging.info("Found TBA listing in %s", series_id)
                         except Exception:
                             pass
 
@@ -516,14 +709,73 @@ class GuideParser:
             logging.warning("Error processing series details for %s: %s", series_id, str(e))
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive download and processing statistics"""
-        return self.parallel_manager.get_detailed_statistics()
+        """Get comprehensive download and processing statistics combining both managers"""
+        guide_stats = self.guide_manager.get_detailed_statistics()
+        series_stats = self.series_manager.get_detailed_statistics()
+
+        combined_stats = {
+            'total_requests': guide_stats.get('total_requests', 0) + series_stats.get('total_requests', 0),
+            'successful': guide_stats.get('successful', 0) + series_stats.get('successful', 0),
+            'failed': guide_stats.get('failed', 0) + series_stats.get('failed', 0),
+            'cached': guide_stats.get('cached', 0) + series_stats.get('cached', 0),
+            'waf_blocks': guide_stats.get('waf_blocks', 0) + series_stats.get('waf_blocks', 0),
+            'bytes_downloaded': guide_stats.get('bytes_downloaded', 0) + series_stats.get('bytes_downloaded', 0),
+            'total_time': max(guide_stats.get('total_time', 0), series_stats.get('total_time', 0)),
+        }
+
+        if combined_stats['total_time'] > 0:
+            combined_stats['requests_per_second'] = combined_stats['total_requests'] / combined_stats['total_time']
+            if combined_stats['bytes_downloaded'] > 0:
+                combined_stats['throughput_mbps'] = (combined_stats['bytes_downloaded'] / (1024 * 1024)) / combined_stats['total_time']
+            else:
+                combined_stats['throughput_mbps'] = 0
+        else:
+            combined_stats['requests_per_second'] = 0
+            combined_stats['throughput_mbps'] = 0
+
+        total_attempts = combined_stats['successful'] + combined_stats['failed']
+        if total_attempts > 0:
+            combined_stats['success_rate'] = (combined_stats['successful'] / total_attempts) * 100
+        else:
+            combined_stats['success_rate'] = 100
+
+        if self.monitor:
+            monitor_stats = self.monitor.get_statistics()
+            combined_stats['monitoring'] = monitor_stats
+
+        if self.adaptive_downloader:
+            adaptive_stats = self.adaptive_downloader.get_performance_summary()
+            combined_stats['adaptive'] = adaptive_stats
+
+        return combined_stats
+
+    def save_monitoring_metrics(self, filename: str = None):
+        """Save monitoring metrics to file if monitoring is enabled"""
+        if self.monitor:
+            if filename:
+                self.monitor.metrics_file = Path(filename)
+            self.monitor.save_metrics()
+            logging.info("Monitoring metrics saved")
 
     def cleanup(self):
         """Clean up resources and collect final statistics"""
-        if self.parallel_manager:
-            self.parallel_manager.consolidate_downloader_stats()
-            self.parallel_manager.cleanup()
-        
-        if self.base_downloader:
-            self.base_downloader.close()
+        logging.info("Cleaning up unified guide parser resources")
+
+        try:
+            if self.guide_manager:
+                self.guide_manager.cleanup()
+
+            if self.series_manager:
+                self.series_manager.cleanup()
+
+            if self.base_downloader:
+                self.base_downloader.close()
+
+            self.stop_monitoring()
+
+        except Exception as e:
+            logging.warning("Error during cleanup: %s", str(e))
+
+
+# Backward compatibility alias
+GuideParser = UnifiedGuideParser

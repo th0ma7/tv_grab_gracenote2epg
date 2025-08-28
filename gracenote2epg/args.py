@@ -1,9 +1,7 @@
 """
 gracenote2epg.gracenote2epg_args - Command line argument parsing
 
-Handles all command-line arguments and validation for the gracenote2epg grabber.
-Provides baseline XMLTV grabber capabilities, lineup testing functionality,
-and parallel download configuration options.
+Fixed version with adaptive mode enabled by default and improved progress settings.
 """
 
 import argparse
@@ -15,7 +13,7 @@ from typing import Optional
 
 
 class ArgumentParser:
-    """Command line argument parser for gracenote2epg with parallel support"""
+    """Command line argument parser for gracenote2epg with improved defaults"""
 
     # Validation patterns
     DAYS_PATTERN = re.compile(r"^[1-9]$|^1[0-4]$")  # 1-14 days
@@ -30,13 +28,13 @@ class ArgumentParser:
         """Create the argument parser with all options"""
         parser = argparse.ArgumentParser(
             prog="gracenote2epg",
-            description="North America TV guide grabber (gracenote.com) with parallel download support",
+            description="North America TV guide grabber (gracenote.com) with intelligent parallel downloads",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
   gracenote2epg --capabilities
   gracenote2epg --days 7 --zip 92101
-  gracenote2epg --days 3 --postal J3B1M4 --warning --console --output guide.xml
+  gracenote2epg --hours 12 --postal J3B1M4 --warning --console --output guide.xml
   gracenote2epg --show-lineup --postal J3B1M4                  # Test lineup detection
   gracenote2epg --show-lineup --zip 90210                      # Test US ZIP code
   gracenote2epg --show-lineup --code "J3B 1M4"                 # Test with space
@@ -48,17 +46,19 @@ Examples:
   gracenote2epg --days 7 --zip 92101 --lineupid CAN-OTAJ3B1M4  # Error: inconsistent
   gracenote2epg --days 7 --zip 92101 --norefresh
   gracenote2epg --days 7 --zip 92101 --refresh 24
+  gracenote2epg --hours 18 --zip 92101 --cachedir /tmp/test-cache
 
 Performance Options:
   gracenote2epg --days 7 --zip 92101 --parallel --workers 6
   gracenote2epg --days 7 --zip 92101 --no-parallel              # Force sequential
-  gracenote2epg --days 7 --zip 92101 --workers 8 --adaptive     # 8 workers with adaptive adjustment
+  gracenote2epg --days 7 --zip 92101 --workers 8                # 8 workers with adaptive (default)
+  gracenote2epg --days 7 --zip 92101 --no-adaptive --workers 4  # Fixed 4 workers
   gracenote2epg --days 7 --zip 92101 --rate-limit 10            # Limit to 10 requests/second
 
   Environment variables (override defaults):
     GRACENOTE_PARALLEL=true/false      Enable/disable parallel downloads
     GRACENOTE_MAX_WORKERS=4            Number of parallel workers (1-10)
-    GRACENOTE_ADAPTIVE=true/false      Enable/disable adaptive concurrency
+    GRACENOTE_ADAPTIVE=true/false      Enable/disable adaptive concurrency (default: true)
     GRACENOTE_RATE_LIMIT=5.0           Maximum requests per second
 
 Testing and Validation:
@@ -106,6 +106,20 @@ LineupID Auto-Detection:
   lineupID parameters compatible with zap2xml format:
   - Canada: CAN-OTAJ3B1M4-DEFAULT (from postal code J3B1M4)
   - USA:    USA-OTA90210-DEFAULT   (from ZIP code 90210)
+
+Duration Options:
+  --days          Download N complete days (1-14, traditional option)
+  --hours         Download N hours (3,6,9,12,15,18,21,24, must be multiple of 3)
+                  Note: --days and --hours are mutually exclusive
+
+Cache Control:
+  --cachedir      Use custom cache directory (overrides default cache location)
+                  Useful for testing, benchmarking, or isolating cache data
+
+Performance Notes:
+  • Adaptive mode (default) automatically adjusts worker count based on server response
+  • Progress reporting scales with download size (5% intervals for optimal visibility)
+  • Single manager architecture eliminates duplicate initialization messages
             """,
         )
 
@@ -157,8 +171,10 @@ LineupID Auto-Detection:
             "--output", "-o", type=Path, help="Redirect XMLTV output to specified file"
         )
 
-        # Guide parameters
-        parser.add_argument("--days", type=int, help="Number of days to download (1-14)")
+        # Guide parameters - NOUVEAU: --days et --hours mutuellement exclusifs
+        duration_group = parser.add_mutually_exclusive_group()
+        duration_group.add_argument("--days", type=int, help="Number of days to download (1-14)")
+        duration_group.add_argument("--hours", type=int, help="Number of hours to download (3,6,9,12,15,18,21,24, must be multiple of 3)")
 
         parser.add_argument("--offset", type=int, help="Start with data for day today plus X days")
 
@@ -207,7 +223,12 @@ LineupID Auto-Detection:
             "--basedir", type=Path, help="Base directory for config, cache, and logs"
         )
 
-        # Parallel download options
+        # NOUVEAU: Cache directory control
+        parser.add_argument(
+            "--cachedir", type=Path, help="Cache directory path (overrides basedir/cache, useful for testing/benchmarking)"
+        )
+
+        # Parallel download options - IMPROVED DEFAULTS
         parallel_group = parser.add_argument_group('Performance Options')
 
         parallel_control = parallel_group.add_mutually_exclusive_group()
@@ -230,22 +251,23 @@ LineupID Auto-Detection:
             type=int,
             metavar="N",
             choices=range(1, 11),
-            help="Maximum parallel download workers (1-10, default: 4)"
+            help="Maximum parallel download workers (1-10, default: 4, adaptive enabled)"
         )
 
+        # IMPROVED: Adaptive is now default, with option to disable
         adaptive_control = parallel_group.add_mutually_exclusive_group()
-        adaptive_control.add_argument(
-            "--adaptive",
-            action="store_true",
-            default=None,
-            help="Enable adaptive concurrency adjustment based on server response"
-        )
-
         adaptive_control.add_argument(
             "--no-adaptive",
             action="store_true",
             default=None,
-            help="Disable adaptive concurrency, use fixed worker count"
+            help="Disable adaptive concurrency adjustment, use fixed worker count"
+        )
+
+        adaptive_control.add_argument(
+            "--adaptive",
+            action="store_true",
+            default=None,
+            help="Enable adaptive concurrency adjustment based on server response (default: enabled)"
         )
 
         parallel_group.add_argument(
@@ -307,8 +329,14 @@ LineupID Auto-Detection:
         # Normalize refresh options
         self._normalize_refresh(args)
 
-        # Process parallel download options
+        # Process parallel options with improved defaults
         self._process_parallel_options(args)
+
+        # NOUVEAU: Process duration options (--days vs --hours)
+        self._process_duration_options(args)
+
+        # NOUVEAU: Validate cache directory
+        self._validate_cachedir(args)
 
         return args
 
@@ -318,6 +346,13 @@ LineupID Auto-Detection:
         if args.days is not None:
             if not self.DAYS_PATTERN.match(str(args.days)):
                 self.parser.error(f"Parameter [--days] must be 1-14, got: {args.days}")
+
+        # NOUVEAU: Validate hours parameter
+        if args.hours is not None:
+            if args.hours < 3 or args.hours > 24:
+                self.parser.error(f"Parameter [--hours] must be 3-24, got: {args.hours}")
+            if args.hours % 3 != 0:
+                self.parser.error(f"Parameter [--hours] must be multiple of 3 (3,6,9,12,15,18,21,24), got: {args.hours}")
 
         # Validate offset parameter
         if args.offset is not None:
@@ -335,6 +370,47 @@ LineupID Auto-Detection:
             if not lineupid:
                 self.parser.error("Parameter [--lineupid] cannot be empty")
             # Additional validation will be done in ConfigManager.normalize_lineup_id()
+
+    def _process_duration_options(self, args):
+        """NOUVEAU: Process --days vs --hours options"""
+        if args.hours is not None:
+            # Convert hours to days for internal use
+            args.duration_hours = args.hours
+            args.duration_days = args.hours / 24.0
+            args.duration_source = "hours"
+
+            logging.debug(f"Duration from --hours: {args.hours}h = {args.duration_days} days")
+
+        elif args.days is not None:
+            # Use days directly
+            args.duration_hours = args.days * 24
+            args.duration_days = float(args.days)
+            args.duration_source = "days"
+
+            logging.debug(f"Duration from --days: {args.days} days = {args.duration_hours}h")
+
+        else:
+            # No duration specified - will use config default
+            args.duration_hours = None
+            args.duration_days = None
+            args.duration_source = None
+
+        # Clean up original arguments to avoid confusion
+        del args.days
+        del args.hours
+
+    def _validate_cachedir(self, args):
+        """NOUVEAU: Validate cache directory option"""
+        if hasattr(args, 'cachedir') and args.cachedir:
+            # Ensure parent directory exists or can be created
+            try:
+                args.cachedir.parent.mkdir(parents=True, exist_ok=True)
+                # Test write access
+                test_file = args.cachedir.parent / ".write_test"
+                test_file.touch()
+                test_file.unlink()
+            except Exception as e:
+                self.parser.error(f"Cannot access cache directory parent {args.cachedir.parent}: {e}")
 
     def _process_lineup_and_location(self, args):
         """Process lineup and location arguments with intelligent extraction and validation"""
@@ -471,7 +547,7 @@ LineupID Auto-Detection:
             del args.refresh
 
     def _process_parallel_options(self, args):
-        """Process parallel download options"""
+        """Process parallel download options with improved defaults"""
 
         # Process parallel enable/disable
         if args.no_parallel:
@@ -488,13 +564,13 @@ LineupID Auto-Detection:
         if hasattr(args, 'no_parallel'):
             del args.no_parallel
 
-        # Process adaptive mode
+        # IMPROVED: Process adaptive mode - now DEFAULT ENABLED
         if hasattr(args, 'no_adaptive') and args.no_adaptive:
             args.adaptive_enabled = False
         elif hasattr(args, 'adaptive') and args.adaptive:
             args.adaptive_enabled = True
         else:
-            # Default to enabled
+            # CHANGED: Default to ENABLED (was previously disabled)
             args.adaptive_enabled = True
 
         # Clean up redundant flags
@@ -510,7 +586,7 @@ LineupID Auto-Detection:
             elif args.workers > 10:
                 self.parser.error("Maximum 10 workers allowed to prevent server overload")
         else:
-            args.workers = 4  # Default
+            args.workers = None  # Will use performance config default
 
         # Validate rate limit
         if args.rate_limit is not None:
@@ -545,13 +621,13 @@ LineupID Auto-Detection:
         """Get parallel download configuration from parsed arguments"""
         return {
             'enabled': getattr(args, 'parallel_enabled', True),
-            'max_workers': getattr(args, 'workers', 4),
-            'adaptive': getattr(args, 'adaptive_enabled', True),
+            'max_workers': getattr(args, 'workers', None),
+            'adaptive': getattr(args, 'adaptive_enabled', True),  # Default True
             'rate_limit': getattr(args, 'rate_limit', None),
         }
 
-    def get_system_defaults(self):
-        """Get system-specific default directories with proper DSM6/DSM7 path selection"""
+    def get_system_defaults(self, cachedir_override: Path = None):
+        """Get system-specific default directories with optional cache override"""
         from pathlib import Path
 
         home = Path.home()
@@ -605,13 +681,19 @@ LineupID Auto-Detection:
             # Standard Linux/Docker
             base_dir = home / "gracenote2epg"
 
+        # NOUVEAU: Determine cache directory with override support
+        if cachedir_override:
+            cache_dir = cachedir_override
+        else:
+            cache_dir = base_dir / "cache"
+
         return {
             "base_dir": base_dir,
-            "cache_dir": base_dir / "cache",
+            "cache_dir": cache_dir,
             "conf_dir": base_dir / "conf",
             "log_dir": base_dir / "log",
             "config_file": base_dir / "conf" / "gracenote2epg.xml",
-            "xmltv_file": base_dir / "cache" / "xmltv.xml",
+            "xmltv_file": cache_dir / "xmltv.xml",  # XMLTV follows cache directory
             "log_file": base_dir / "log" / "gracenote2epg.log",
         }
 

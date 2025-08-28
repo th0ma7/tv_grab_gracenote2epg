@@ -9,6 +9,7 @@ Unified Architecture:
 - Single download method that scales from sequential (1 worker) to parallel (N workers)
 - Modular organization with downloader/ and parser/ submodules
 - Simplified maintenance with consistent interfaces
+- Event-driven real-time monitoring system
 """
 
 __version__ = "2.0.0"
@@ -23,18 +24,21 @@ from .tvheadend import TvheadendClient
 from .utils import CacheManager, TimeUtils
 from .xmltv import XmltvGenerator
 
-# Unified download system
+# Unified download system (refactored imports)
 from .downloader import (
     OptimizedDownloader,
     ParallelDownloadManager,
     AdaptiveParallelDownloader,
-    RealTimeMonitor,
+    EventDrivenMonitor,
     create_download_system,
     get_performance_config
 )
 
 # Unified parser system
-from .parser.guide import GuideParser
+from .parser.guide import UnifiedGuideParser
+
+# Backward compatibility alias
+GuideParser = UnifiedGuideParser
 
 # i18n system
 from .dictionaries import (
@@ -46,28 +50,29 @@ from .dictionaries import (
     reload_translations,
 )
 
-# Main exports - simplified for unified architecture
+# Main exports - updated for unified architecture
 __all__ = [
     # Core system
     "ArgumentParser",
-    "ConfigManager", 
+    "ConfigManager",
     "LanguageDetector",
     "TvheadendClient",
     "CacheManager",
     "TimeUtils",
     "XmltvGenerator",
-    
+
     # Unified download system
     "OptimizedDownloader",
     "ParallelDownloadManager",
-    "AdaptiveParallelDownloader", 
-    "RealTimeMonitor",
+    "AdaptiveParallelDownloader",
+    "EventDrivenMonitor",
     "create_download_system",
     "get_performance_config",
-    
+
     # Unified parser
-    "GuideParser",
-    
+    "UnifiedGuideParser",
+    "GuideParser",  # Backward compatibility alias
+
     # i18n system
     "get_category_translation",
     "get_term_translation",
@@ -81,58 +86,63 @@ __all__ = [
 def create_gracenote_system(
     max_workers: int = 4,
     enable_monitoring: bool = False,
+    monitoring_config: dict = None,
     cache_dir: str = None,
     config_file: str = None
 ):
     """
-    Factory function to create a complete gracenote2epg system
-    
+    Factory function to create a complete gracenote2epg system with unified monitoring
+
     Args:
         max_workers: Number of parallel workers (1 = sequential behavior)
-        enable_monitoring: Enable real-time progress monitoring
+        enable_monitoring: Enable real-time monitoring
+        monitoring_config: Configuration dict for monitoring
         cache_dir: Cache directory path
         config_file: Configuration file path
-        
+
     Returns:
         Tuple of (guide_parser, config_manager, cache_manager)
     """
     from pathlib import Path
-    
+
     # Initialize core components
     if cache_dir:
         cache_manager = CacheManager(Path(cache_dir))
     else:
         cache_manager = CacheManager(Path.home() / "gracenote2epg" / "cache")
-    
+
     if config_file:
         config_manager = ConfigManager(Path(config_file))
     else:
         config_manager = ConfigManager(Path.home() / "gracenote2epg" / "conf" / "gracenote2epg.xml")
-    
-    # Create download system
+
+    # Create unified download system
     base_downloader, parallel_manager, monitor = create_download_system(
         max_workers=max_workers,
-        enable_monitoring=enable_monitoring
+        enable_monitoring=enable_monitoring,
+        monitoring_config=monitoring_config or {}
     )
-    
-    # Create unified parser
-    guide_parser = GuideParser(
+
+    # Create unified parser with monitoring integration
+    guide_parser = UnifiedGuideParser(
         cache_manager=cache_manager,
         base_downloader=base_downloader,
-        max_workers=max_workers
+        max_workers=max_workers,
+        enable_monitoring=enable_monitoring,
+        monitoring_config=monitoring_config
     )
-    
+
     return guide_parser, config_manager, cache_manager
 
 
 def get_system_info():
-    """Get system information and capabilities"""
+    """Get system information and capabilities with unified architecture details"""
     import platform
     import os
-    
+
     # Get performance configuration
     perf_config = get_performance_config()
-    
+
     return {
         'version': __version__,
         'author': __author__,
@@ -141,24 +151,43 @@ def get_system_info():
         'platform': platform.platform(),
         'cpu_count': os.cpu_count(),
         'recommended_workers': perf_config.get('max_workers', 4),
-        'architecture': 'unified_parallel',
+        'architecture': 'unified_event_driven',
+        'monitoring_system': 'EventDrivenMonitor',
         'features': [
             'Unified download architecture',
-            'Adaptive concurrency control', 
-            'Real-time monitoring',
+            'Event-driven real-time monitoring',
+            'Adaptive concurrency control',
             'Intelligent caching',
             'Multi-language support',
-            'TVheadend integration'
+            'TVheadend integration',
+            'Web API for external monitoring'
         ]
     }
 
 
-# Backward compatibility aliases
-# For existing code that might import the old parallel-specific classes
-from .downloader.parallel import (
-    ParallelDownloadManager as LegacyParallelManager,
-    AdaptiveParallelDownloader as LegacyAdaptiveDownloader
-)
+def get_monitoring_status():
+    """Get current monitoring configuration and availability"""
+    import os
 
-# Legacy aliases (deprecated, will be removed in future version)
-LegacyGuideParser = GuideParser  # Old separate parsers are now unified
+    # Check environment configuration
+    monitoring_enabled = os.environ.get('GRACENOTE_ENABLE_MONITORING', 'false').lower() == 'true'
+    web_api_enabled = os.environ.get('GRACENOTE_MONITORING_WEB_API', 'false').lower() == 'true'
+    monitoring_port = int(os.environ.get('GRACENOTE_MONITORING_PORT', '9989'))
+
+    return {
+        'monitoring_enabled': monitoring_enabled,
+        'web_api_enabled': web_api_enabled,
+        'monitoring_port': monitoring_port,
+        'environment_vars': {
+            'GRACENOTE_ENABLE_MONITORING': os.environ.get('GRACENOTE_ENABLE_MONITORING'),
+            'GRACENOTE_MONITORING_WEB_API': os.environ.get('GRACENOTE_MONITORING_WEB_API'),
+            'GRACENOTE_MONITORING_PORT': os.environ.get('GRACENOTE_MONITORING_PORT'),
+        }
+    }
+
+
+# Legacy aliases for backward compatibility (to be removed in future version)
+# These are kept to avoid breaking existing code during transition period
+LegacyGuideParser = UnifiedGuideParser
+LegacyParallelManager = ParallelDownloadManager
+LegacyRealTimeMonitor = EventDrivenMonitor

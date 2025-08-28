@@ -1,8 +1,8 @@
 """
-gracenote2epg.downloader.base - Base HTTP downloader
+gracenote2epg.downloader.base - Enhanced Base HTTP downloader
 
-Optimized download manager with WAF protection, adaptive delays, connection reuse,
-and intelligent retry logic. Moved from gracenote2epg_downloader.py
+Version améliorée avec support pour le système de monitoring événementiel.
+Ajoute des callbacks pour communiquer avec EventDrivenMonitor.
 """
 
 import json
@@ -12,7 +12,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -21,7 +21,12 @@ import urllib3
 
 
 class OptimizedDownloader:
-    """Optimized download manager with WAF protection and adaptive delays"""
+    """
+    Enhanced optimized download manager with monitoring support
+
+    Ajoute des callbacks optionnels pour intégration avec EventDrivenMonitor
+    tout en conservant la compatibilité avec l'API existante.
+    """
 
     def __init__(self, base_delay: float = 1.0, min_delay: float = 0.5):
         self.session: Optional[requests.Session] = None
@@ -41,8 +46,30 @@ class OptimizedDownloader:
         self.total_requests = 0
         self.current_ua_index = 0
 
+        # Monitoring support
+        self.monitor_callback: Optional[Callable] = None
+        self.current_worker_id: int = 0
+
         # Initialize session
         self.init_session()
+
+    def set_monitor_callback(self, callback: Callable):
+        """
+        Set monitoring callback for event reporting
+
+        Args:
+            callback: Function(event_type: str, worker_id: int, **data) -> None
+        """
+        self.monitor_callback = callback
+        logging.debug("Monitor callback configured for OptimizedDownloader")
+
+    def _emit_event(self, event_type: str, **data):
+        """Emit monitoring event if callback is configured"""
+        if self.monitor_callback:
+            try:
+                self.monitor_callback(event_type, self.current_worker_id, **data)
+            except Exception as e:
+                logging.debug("Error in monitor callback: %s", e)
 
     def init_session(self):
         """Initialize optimized session with forced connection reuse"""
@@ -66,7 +93,7 @@ class OptimizedDownloader:
         self.session.headers.update(base_headers)
 
         # Optimized configuration for connection reuse
-        retry_strategy = Retry(total=0, backoff_factor=0, status_forcelist=[])  # Don't auto-retry
+        retry_strategy = Retry(total=0, backoff_factor=0, status_forcelist=[])
 
         # Optimized adapter with minimal connection pool
         adapter = HTTPAdapter(
@@ -84,15 +111,14 @@ class OptimizedDownloader:
 
         # Set initial User-Agent
         self.rotate_user_agent()
-        logging.info("Optimized session initialized with persistent connections")
-        logging.debug("  Connection pooling: 1 connection max, keep-alive enabled")
+        logging.debug("Optimized session initialized with persistent connections")
 
     def rotate_user_agent(self):
         """Rotate User-Agent intelligently"""
         self.current_ua_index = (self.current_ua_index + 1) % len(self.user_agents)
         new_ua = self.user_agents[self.current_ua_index]
         self.session.headers.update({"User-Agent": new_ua})
-        logging.debug("  User-Agent rotated: %s", new_ua[:50] + "...")
+        logging.debug("User-Agent rotated: %s", new_ua[:50] + "...")
 
     def adaptive_delay(self):
         """Apply adaptive delay between requests"""
@@ -111,7 +137,7 @@ class OptimizedDownloader:
         if elapsed < delay:
             sleep_time = delay - elapsed
             logging.debug(
-                "  Adaptive delay: %.2fs (failures: %d)", sleep_time, self.consecutive_failures
+                "Adaptive delay: %.2fs (failures: %d)", sleep_time, self.consecutive_failures
             )
             time.sleep(sleep_time)
 
@@ -130,12 +156,17 @@ class OptimizedDownloader:
         return any(indicator in response_text for indicator in waf_indicators)
 
     def handle_waf_block(self, extra_delay_range: tuple = (3, 8)):
-        """Handle WAF blocking with appropriate backoff"""
+        """Handle WAF blocking with appropriate backoff and monitoring"""
         self.waf_blocks += 1
         self.consecutive_failures += 1
         extra_delay = random.uniform(*extra_delay_range)
-        logging.warning("  WAF block detected, backing off %.1fs...", extra_delay)
+
+        # Emit WAF detection event
+        self._emit_event('waf_detected', delay=extra_delay, total_blocks=self.waf_blocks)
+
+        logging.warning("WAF block detected, backing off %.1fs...", extra_delay)
         time.sleep(extra_delay)
+
         if self.total_requests % 10 == 0:  # Rotate occasionally after blocks
             self.rotate_user_agent()
 
@@ -146,17 +177,18 @@ class OptimizedDownloader:
         max_retries: int = 3,
         timeout: Optional[int] = None,
     ) -> Optional[bytes]:
-        """Download using urllib (for series details) with intelligent retry and WAF handling"""
+        """Download using urllib (for series details) with enhanced monitoring"""
         self.total_requests += 1
+        request_start = time.time()
 
         # Adaptive timeouts based on history
         if timeout is None:
             if self.consecutive_failures == 0:
-                timeout = 6  # Fast if everything is OK
+                timeout = 6
             elif self.consecutive_failures == 1:
-                timeout = 10  # Medium after 1 failure
+                timeout = 10
             else:
-                timeout = 15  # Longer if repeated problems
+                timeout = 15
 
         # Periodic User-Agent rotation
         if self.total_requests % 25 == 0:
@@ -165,7 +197,7 @@ class OptimizedDownloader:
         for attempt in range(max_retries):
             self.adaptive_delay()
 
-            current_timeout = timeout + (attempt * 2)  # Increase timeout on each retry
+            current_timeout = timeout + (attempt * 2)
             current_ua = self.user_agents[self.current_ua_index]
 
             # Build display URL with parameters
@@ -175,12 +207,14 @@ class OptimizedDownloader:
                 display_url = url
 
             logging.debug(
-                "  Attempt %d/%d: %s (timeout: %ds)",
+                "Attempt %d/%d: %s (timeout: %ds)",
                 attempt + 1,
                 max_retries,
                 display_url[:100] + "..." if len(display_url) > 100 else display_url,
                 current_timeout,
             )
+
+            attempt_start = time.time()
 
             try:
                 # Use urllib exactly like the original working version
@@ -189,39 +223,54 @@ class OptimizedDownloader:
                 )
                 json_content = urllib.request.urlopen(url_request, timeout=current_timeout).read()
 
+                attempt_duration = time.time() - attempt_start
+
                 if json_content and len(json_content) > 10:
                     # Check that it's valid JSON
                     try:
                         json.loads(json_content)
                         self.consecutive_failures = max(0, self.consecutive_failures - 1)
-                        logging.debug("  Success: %d bytes received", len(json_content))
+
+                        # Emit success event
+                        total_duration = time.time() - request_start
+                        self._emit_event('request_success',
+                                       duration=total_duration,
+                                       bytes_downloaded=len(json_content),
+                                       attempts=attempt + 1)
+
+                        logging.debug("Success: %d bytes received", len(json_content))
                         return json_content
                     except json.JSONDecodeError:
-                        logging.warning("  Invalid JSON received on attempt %d", attempt + 1)
+                        logging.warning("Invalid JSON received on attempt %d", attempt + 1)
                         self.consecutive_failures += 1
                 else:
                     logging.warning(
-                        "  Empty/small response on attempt %d: %d bytes",
+                        "Empty/small response on attempt %d: %d bytes",
                         attempt + 1,
                         len(json_content) if json_content else 0,
                     )
                     self.consecutive_failures += 1
 
             except urllib.error.HTTPError as e:
+                attempt_duration = time.time() - attempt_start
+
                 if e.code == 403:
                     self.handle_waf_block()
                     continue
-                logging.warning("  HTTP Error %d on attempt %d: %s", e.code, attempt + 1, e.reason)
+                elif e.code == 429:  # Rate limiting
+                    self._emit_event('rate_limit', http_code=e.code, delay=attempt_duration)
+
+                logging.warning("HTTP Error %d on attempt %d: %s", e.code, attempt + 1, e.reason)
                 if e.code in [404, 410]:
                     break  # Don't retry for permanent errors
                 self.consecutive_failures += 1
 
             except urllib.error.URLError as e:
-                logging.warning("  URL Error on attempt %d: %s", attempt + 1, str(e.reason))
+                logging.warning("URL Error on attempt %d: %s", attempt + 1, str(e.reason))
                 self.consecutive_failures += 1
 
             except Exception as e:
-                logging.warning("  Unexpected error on attempt %d: %s", attempt + 1, str(e))
+                logging.warning("Unexpected error on attempt %d: %s", attempt + 1, str(e))
                 self.consecutive_failures += 1
 
             # Wait before retry
@@ -230,7 +279,13 @@ class OptimizedDownloader:
                 time.sleep(retry_delay)
 
         # All retries failed
-        logging.warning("  All %d attempts failed", max_retries)
+        total_duration = time.time() - request_start
+        self._emit_event('request_failed',
+                        duration=total_duration,
+                        attempts=max_retries,
+                        final_error="All retries exhausted")
+
+        logging.warning("All %d attempts failed", max_retries)
         return None
 
     def download_with_retry(
@@ -241,17 +296,18 @@ class OptimizedDownloader:
         max_retries: int = 3,
         timeout: Optional[int] = None,
     ) -> Optional[bytes]:
-        """Download with intelligent retry, adaptive timeouts and WAF handling (for guide)"""
+        """Download with enhanced monitoring and intelligent retry"""
         self.total_requests += 1
+        request_start = time.time()
 
         # Adaptive timeouts based on history
         if timeout is None:
             if self.consecutive_failures == 0:
-                timeout = 6  # Fast if everything is OK
+                timeout = 6
             elif self.consecutive_failures == 1:
-                timeout = 10  # Medium after 1 failure
+                timeout = 10
             else:
-                timeout = 15  # Longer if repeated problems
+                timeout = 15
 
         # Periodic User-Agent rotation
         if self.total_requests % 25 == 0:
@@ -260,7 +316,7 @@ class OptimizedDownloader:
         for attempt in range(max_retries):
             self.adaptive_delay()
 
-            current_timeout = timeout + (attempt * 2)  # Increase timeout on each retry
+            current_timeout = timeout + (attempt * 2)
 
             # Build display URL with parameters for POST
             if method.upper() == "POST" and data:
@@ -269,12 +325,14 @@ class OptimizedDownloader:
                 display_url = url
 
             logging.debug(
-                "  Attempt %d/%d: %s (timeout: %ds)",
+                "Attempt %d/%d: %s (timeout: %ds)",
                 attempt + 1,
                 max_retries,
                 display_url[:100] + "..." if len(display_url) > 100 else display_url,
                 current_timeout,
             )
+
+            attempt_start = time.time()
 
             try:
                 if method.upper() == "POST":
@@ -283,6 +341,8 @@ class OptimizedDownloader:
                     )
                 else:
                     response = self.session.get(url, timeout=current_timeout, allow_redirects=False)
+
+                attempt_duration = time.time() - attempt_start
 
                 # Check WAF blocking
                 if response.status_code == 403:
@@ -293,30 +353,43 @@ class OptimizedDownloader:
                     self.handle_waf_block((5, 12))  # Longer delay for CAPTCHA
                     continue
 
+                # Check rate limiting
+                if response.status_code == 429:
+                    self._emit_event('rate_limit', http_code=response.status_code, delay=attempt_duration)
+
                 # Check response status
                 if response.status_code == 200:
                     self.consecutive_failures = max(0, self.consecutive_failures - 1)
-                    logging.debug("  Success: %d bytes received", len(response.content))
+
+                    # Emit success event
+                    total_duration = time.time() - request_start
+                    self._emit_event('request_success',
+                                   duration=total_duration,
+                                   bytes_downloaded=len(response.content),
+                                   attempts=attempt + 1,
+                                   http_code=response.status_code)
+
+                    logging.debug("Success: %d bytes received", len(response.content))
                     return response.content
                 else:
-                    logging.warning("  HTTP %d received", response.status_code)
+                    logging.warning("HTTP %d received", response.status_code)
                     if response.status_code in [404, 410]:
                         break  # Don't retry for permanent errors
                     self.consecutive_failures += 1
 
             except requests.exceptions.Timeout:
-                logging.warning("  Timeout (%ds) on attempt %d", current_timeout, attempt + 1)
+                logging.warning("Timeout (%ds) on attempt %d", current_timeout, attempt + 1)
                 self.consecutive_failures += 1
 
             except requests.exceptions.ConnectionError as e:
-                logging.warning("  Connection error on attempt %d: %s", attempt + 1, str(e))
+                logging.warning("Connection error on attempt %d: %s", attempt + 1, str(e))
                 self.consecutive_failures += 1
                 # Force reconnection on connection errors
                 self.session.close()
                 self.init_session()
 
             except requests.exceptions.RequestException as e:
-                logging.warning("  Request error on attempt %d: %s", attempt + 1, str(e))
+                logging.warning("Request error on attempt %d: %s", attempt + 1, str(e))
                 self.consecutive_failures += 1
 
             # Wait before retry
@@ -325,7 +398,13 @@ class OptimizedDownloader:
                 time.sleep(retry_delay)
 
         # All retries failed
-        logging.warning("  All %d attempts failed", max_retries)
+        total_duration = time.time() - request_start
+        self._emit_event('request_failed',
+                        duration=total_duration,
+                        attempts=max_retries,
+                        final_error="All retries exhausted")
+
+        logging.warning("All %d attempts failed", max_retries)
         return None
 
     def close(self):

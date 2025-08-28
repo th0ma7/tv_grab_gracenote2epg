@@ -1,498 +1,549 @@
 """
-gracenote2epg.downloader.monitoring - Real-time monitoring and metrics
+gracenote2epg.downloader.monitoring - Real-time event-driven monitoring
 
-Provides real-time monitoring, progress tracking, and performance metrics
-for parallel download operations. Moved from gracenote2epg_monitoring.py
+Clean event-driven monitoring system without backward compatibility.
+Direct communication between workers and monitor via events.
 """
 
 import json
 import logging
 import threading
 import time
-from collections import deque
+from collections import deque, defaultdict
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Deque, Any
+from queue import Queue, Empty
+from typing import Dict, List, Optional, Deque, Any, Callable
 import sys
 
 
+class EventType(Enum):
+    """Monitoring event types"""
+    TASK_STARTED = "task_started"
+    TASK_PROGRESS = "task_progress"
+    TASK_COMPLETED = "task_completed"
+    TASK_FAILED = "task_failed"
+    WORKER_IDLE = "worker_idle"
+    WORKER_BUSY = "worker_busy"
+    BATCH_STARTED = "batch_started"
+    BATCH_COMPLETED = "batch_completed"
+    RATE_LIMIT_HIT = "rate_limit_hit"
+    WAF_DETECTED = "waf_detected"
+
+
 @dataclass
-class DownloadMetric:
-    """Single download metric data point"""
+class MonitoringEvent:
+    """Thread-safe monitoring event"""
+    event_type: EventType
     timestamp: float
-    task_id: str
-    task_type: str
-    duration: float
-    success: bool
-    bytes_downloaded: int
-    retry_count: int
     worker_id: int
-    
-    def to_dict(self) -> Dict:
-        """Convert to dictionary"""
-        return {
-            **asdict(self),
-            'timestamp_str': datetime.fromtimestamp(self.timestamp).isoformat()
-        }
+    task_id: Optional[str] = None
+    data: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.data is None:
+            self.data = {}
 
 
-class ProgressBar:
-    """Terminal progress bar for downloads"""
-    
-    def __init__(self, total: int, width: int = 50, prefix: str = "Progress"):
-        self.total = total
-        self.width = width
-        self.prefix = prefix
-        self.current = 0
-        self.start_time = time.time()
-        self.lock = threading.Lock()
-        
-    def update(self, current: int):
-        """Update progress bar"""
-        with self.lock:
-            self.current = current
-            self._render()
-    
-    def increment(self):
-        """Increment progress by 1"""
-        with self.lock:
-            self.current += 1
-            self._render()
-    
-    def _render(self):
-        """Render progress bar to terminal"""
-        if self.total == 0:
-            return
-        
-        # Calculate percentage
-        percent = (self.current / self.total) * 100
-        
-        # Calculate filled width
-        filled = int(self.width * self.current / self.total)
-        
-        # Create bar
-        bar = '█' * filled + '░' * (self.width - filled)
-        
-        # Calculate time
-        elapsed = time.time() - self.start_time
-        if self.current > 0:
-            eta = (elapsed / self.current) * (self.total - self.current)
-            eta_str = self._format_time(eta)
-        else:
-            eta_str = "N/A"
-        
-        # Print progress
-        sys.stdout.write(f'\r{self.prefix}: |{bar}| {percent:.1f}% ({self.current}/{self.total}) ETA: {eta_str}')
-        sys.stdout.flush()
-        
-        # New line when complete
-        if self.current >= self.total:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
-    
-    def _format_time(self, seconds: float) -> str:
-        """Format time in human-readable format"""
-        if seconds < 60:
-            return f"{seconds:.0f}s"
-        elif seconds < 3600:
-            return f"{seconds/60:.1f}m"
-        else:
-            return f"{seconds/3600:.1f}h"
+@dataclass
+class WorkerState:
+    """Real-time worker state"""
+    worker_id: int
+    is_busy: bool = False
+    current_task: Optional[str] = None
+    task_start_time: Optional[float] = None
+    tasks_completed: int = 0
+    tasks_failed: int = 0
+    bytes_downloaded: int = 0
+    last_activity: float = 0
+
+    def reset_task(self):
+        """Reset current task state"""
+        self.is_busy = False
+        self.current_task = None
+        self.task_start_time = None
+        self.last_activity = time.time()
 
 
-class RealTimeMonitor:
-    """Real-time monitoring for parallel downloads"""
-    
-    def __init__(self, enable_console: bool = True, metrics_file: Optional[Path] = None):
+@dataclass
+class RealTimeStats:
+    """Thread-safe real-time statistics"""
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    failed_tasks: int = 0
+    cached_tasks: int = 0
+    active_workers: int = 0
+    bytes_downloaded: int = 0
+    requests_per_second: float = 0.0
+    avg_response_time: float = 0.0
+    waf_blocks: int = 0
+    rate_limits: int = 0
+    start_time: float = 0.0
+
+    def get_completion_percentage(self) -> float:
+        """Calculate completion percentage"""
+        if self.total_tasks == 0:
+            return 0.0
+        return (self.completed_tasks + self.cached_tasks) / self.total_tasks * 100
+
+
+class EventDrivenMonitor:
+    """Event-driven monitor with direct worker-monitor communication"""
+
+    def __init__(self,
+                 enable_console: bool = True,
+                 enable_web_api: bool = False,
+                 web_port: int = 9989,
+                 metrics_file: Optional[Path] = None):
         """
-        Initialize monitor
-        
+        Initialize event-driven monitor
+
         Args:
-            enable_console: Show real-time console output
-            metrics_file: Optional file to save metrics
+            enable_console: Real-time console display
+            enable_web_api: Web API for external monitoring
+            web_port: Web API port (default: 9989)
+            metrics_file: File to save metrics
         """
         self.enable_console = enable_console
+        self.enable_web_api = enable_web_api
+        self.web_port = web_port
         self.metrics_file = metrics_file
-        
-        # Metrics storage
-        self.metrics: Deque[DownloadMetric] = deque(maxlen=1000)
-        self.metrics_lock = threading.Lock()
-        
-        # Current state
-        self.active_downloads: Dict[int, Dict] = {}  # worker_id -> task info
-        self.download_counts = {
-            'total': 0,
-            'successful': 0,
-            'failed': 0,
-            'cached': 0
-        }
-        
-        # Performance tracking
+
+        # Thread-safe communication
+        self.event_queue = Queue()
+        self.stats_lock = threading.RLock()
+
+        # Real-time state
+        self.stats = RealTimeStats()
+        self.worker_states: Dict[int, WorkerState] = {}
+        self.recent_events: Deque[MonitoringEvent] = deque(maxlen=1000)
         self.response_times: Deque[float] = deque(maxlen=100)
-        self.throughput_history: Deque[float] = deque(maxlen=60)  # Last minute
-        
-        # Display thread
-        self.display_thread = None
-        self.stop_display = threading.Event()
-        
-        # Progress bars
-        self.progress_bars: Dict[str, ProgressBar] = {}
-    
+        self.throughput_history: Deque[tuple] = deque(maxlen=60)  # (timestamp, mbps)
+
+        # Processing threads
+        self.event_processor = None
+        self.console_updater = None
+        self.web_server = None
+        self.stop_event = threading.Event()
+
+        # Event callbacks
+        self.event_callbacks: Dict[EventType, List[Callable]] = defaultdict(list)
+
+        # Named progress bars
+        self.progress_bars: Dict[str, Dict] = {}
+
+        logging.info("Event-driven monitor initialized (console: %s, web: %s, port: %d)",
+                    enable_console, enable_web_api, web_port)
+
     def start(self):
         """Start monitoring"""
+        self.stats.start_time = time.time()
+        self.stop_event.clear()
+
+        # Event processing thread
+        self.event_processor = threading.Thread(
+            target=self._process_events,
+            daemon=True,
+            name="EventProcessor"
+        )
+        self.event_processor.start()
+
+        # Console display thread
         if self.enable_console:
-            self.stop_display.clear()
-            self.display_thread = threading.Thread(target=self._display_loop, daemon=True)
-            self.display_thread.start()
-        
+            self.console_updater = threading.Thread(
+                target=self._update_console,
+                daemon=True,
+                name="ConsoleUpdater"
+            )
+            self.console_updater.start()
+
+        # Web API if enabled
+        if self.enable_web_api:
+            self._start_web_server()
+
         logging.info("Real-time monitoring started")
-    
+
     def stop(self):
         """Stop monitoring"""
-        if self.display_thread:
-            self.stop_display.set()
-            self.display_thread.join(timeout=2)
-        
+        self.stop_event.set()
+
+        # Wait for threads to finish
+        if self.event_processor:
+            self.event_processor.join(timeout=2)
+
+        if self.console_updater:
+            self.console_updater.join(timeout=1)
+
+        if self.web_server:
+            self._stop_web_server()
+
         # Save final metrics
         if self.metrics_file:
             self.save_metrics()
-        
+
         logging.info("Real-time monitoring stopped")
-    
-    def record_download(self, metric: DownloadMetric):
-        """Record a download metric"""
-        with self.metrics_lock:
-            self.metrics.append(metric)
-            
-            # Update counts
-            self.download_counts['total'] += 1
-            if metric.success:
-                self.download_counts['successful'] += 1
-            else:
-                self.download_counts['failed'] += 1
-            
-            # Update performance metrics
-            self.response_times.append(metric.duration)
-            
-            # Calculate throughput
-            if metric.bytes_downloaded > 0 and metric.duration > 0:
-                throughput_mbps = (metric.bytes_downloaded / (1024 * 1024)) / metric.duration
-                self.throughput_history.append(throughput_mbps)
-    
-    def update_active_download(self, worker_id: int, task_info: Optional[Dict] = None):
-        """Update active download status"""
-        with self.metrics_lock:
-            if task_info:
-                self.active_downloads[worker_id] = {
-                    **task_info,
-                    'start_time': time.time()
-                }
-            else:
-                # Clear completed download
-                self.active_downloads.pop(worker_id, None)
-    
-    def create_progress_bar(self, name: str, total: int) -> ProgressBar:
-        """Create a named progress bar"""
-        progress_bar = ProgressBar(total=total, prefix=name)
-        self.progress_bars[name] = progress_bar
-        return progress_bar
-    
-    def _display_loop(self):
-        """Main display loop for console output"""
-        while not self.stop_display.wait(timeout=1.0):
-            self._update_display()
-    
-    def _update_display(self):
-        """Update console display"""
-        # Clear screen (platform-specific)
+
+    def emit_event(self, event_type: EventType, worker_id: int,
+                   task_id: str = None, **data):
+        """
+        Emit monitoring event (thread-safe)
+
+        Args:
+            event_type: Event type
+            worker_id: Worker ID
+            task_id: Task ID (optional)
+            **data: Additional data
+        """
+        event = MonitoringEvent(
+            event_type=event_type,
+            timestamp=time.time(),
+            worker_id=worker_id,
+            task_id=task_id,
+            data=data
+        )
+
+        try:
+            self.event_queue.put_nowait(event)
+        except Exception as e:
+            logging.warning("Failed to emit monitoring event: %s", e)
+
+    def register_callback(self, event_type: EventType, callback: Callable):
+        """Register callback for event type"""
+        self.event_callbacks[event_type].append(callback)
+
+    def create_progress_tracker(self, name: str, total: int) -> 'ProgressTracker':
+        """Create named progress tracker"""
+        with self.stats_lock:
+            self.progress_bars[name] = {
+                'total': total,
+                'completed': 0,
+                'start_time': time.time()
+            }
+
+        return ProgressTracker(self, name)
+
+    def _process_events(self):
+        """Main event processing thread"""
+        while not self.stop_event.is_set():
+            try:
+                # Process events in batches for efficiency
+                events_batch = []
+
+                # Collect available events (non-blocking)
+                try:
+                    # First event (blocking with timeout)
+                    event = self.event_queue.get(timeout=0.1)
+                    events_batch.append(event)
+
+                    # Additional events (non-blocking)
+                    while True:
+                        try:
+                            event = self.event_queue.get_nowait()
+                            events_batch.append(event)
+                            if len(events_batch) >= 50:  # Limit batch size
+                                break
+                        except Empty:
+                            break
+
+                except Empty:
+                    continue
+
+                # Process batch
+                self._process_events_batch(events_batch)
+
+            except Exception as e:
+                logging.error("Error processing monitoring events: %s", e)
+
+    def _process_events_batch(self, events: List[MonitoringEvent]):
+        """Process event batch"""
+        with self.stats_lock:
+            for event in events:
+                self._process_single_event(event)
+                self.recent_events.append(event)
+
+    def _process_single_event(self, event: MonitoringEvent):
+        """Process individual event"""
+        worker_id = event.worker_id
+
+        # Initialize worker state if needed
+        if worker_id not in self.worker_states:
+            self.worker_states[worker_id] = WorkerState(worker_id=worker_id)
+
+        worker_state = self.worker_states[worker_id]
+
+        # Process by event type
+        if event.event_type == EventType.TASK_STARTED:
+            worker_state.is_busy = True
+            worker_state.current_task = event.task_id
+            worker_state.task_start_time = event.timestamp
+            worker_state.last_activity = event.timestamp
+
+        elif event.event_type == EventType.TASK_COMPLETED:
+            worker_state.tasks_completed += 1
+            worker_state.reset_task()
+            self.stats.completed_tasks += 1
+
+            # Record response time
+            duration = event.data.get('duration', 0)
+            if duration > 0:
+                self.response_times.append(duration)
+
+            # Record bytes downloaded
+            bytes_dl = event.data.get('bytes_downloaded', 0)
+            if bytes_dl > 0:
+                worker_state.bytes_downloaded += bytes_dl
+                self.stats.bytes_downloaded += bytes_dl
+
+                # Calculate throughput
+                if duration > 0:
+                    throughput_mbps = (bytes_dl / (1024 * 1024)) / duration
+                    self.throughput_history.append((event.timestamp, throughput_mbps))
+
+        elif event.event_type == EventType.TASK_FAILED:
+            worker_state.tasks_failed += 1
+            worker_state.reset_task()
+            self.stats.failed_tasks += 1
+
+        elif event.event_type == EventType.BATCH_STARTED:
+            self.stats.total_tasks = event.data.get('total_tasks', 0)
+
+        elif event.event_type == EventType.WAF_DETECTED:
+            self.stats.waf_blocks += 1
+
+        elif event.event_type == EventType.RATE_LIMIT_HIT:
+            self.stats.rate_limits += 1
+
+        # Update global stats
+        self._update_derived_stats()
+
+        # Call callbacks
+        for callback in self.event_callbacks[event.event_type]:
+            try:
+                callback(event)
+            except Exception as e:
+                logging.warning("Error in event callback: %s", e)
+
+    def _update_derived_stats(self):
+        """Update derived statistics"""
+        # Active workers
+        self.stats.active_workers = sum(
+            1 for ws in self.worker_states.values() if ws.is_busy
+        )
+
+        # Average response time
+        if self.response_times:
+            self.stats.avg_response_time = sum(self.response_times) / len(self.response_times)
+
+        # Requests per second
+        elapsed = time.time() - self.stats.start_time
+        if elapsed > 0:
+            total_requests = self.stats.completed_tasks + self.stats.failed_tasks
+            self.stats.requests_per_second = total_requests / elapsed
+
+    def _update_console(self):
+        """Optimized console update thread"""
+        last_update = 0
+
+        while not self.stop_event.wait(timeout=0.5):
+            current_time = time.time()
+
+            # Limit console updates (max 2 times per second)
+            if current_time - last_update < 0.5:
+                continue
+
+            try:
+                self._render_console()
+                last_update = current_time
+            except Exception as e:
+                logging.error("Error updating console: %s", e)
+
+    def _render_console(self):
+        """Render optimized console display"""
+        with self.stats_lock:
+            stats_copy = RealTimeStats(**asdict(self.stats))
+            workers_copy = {k: WorkerState(**asdict(v)) for k, v in self.worker_states.items()}
+            progress_copy = self.progress_bars.copy()
+
+        # Clear screen
         import os
-        os.system('cls' if os.name == 'nt' else 'clear')
-        
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            print('\033[2J\033[H', end='')
+
         # Header
         print("=" * 80)
         print("GRACENOTE2EPG - REAL-TIME MONITOR")
         print("=" * 80)
-        
-        # Current status
+
+        # Main statistics
         print(f"\n📊 Download Statistics:")
-        print(f"  Total: {self.download_counts['total']}")
-        print(f"  ✅ Successful: {self.download_counts['successful']}")
-        print(f"  ❌ Failed: {self.download_counts['failed']}")
-        print(f"  💾 From Cache: {self.download_counts['cached']}")
-        
-        # Performance metrics
-        if self.response_times:
-            avg_response = sum(self.response_times) / len(self.response_times)
+        completion_pct = stats_copy.get_completion_percentage()
+        print(f"  Progress: {completion_pct:.1f}% ({stats_copy.completed_tasks + stats_copy.cached_tasks}/{stats_copy.total_tasks})")
+        print(f"  ✅ Completed: {stats_copy.completed_tasks}")
+        print(f"  ❌ Failed: {stats_copy.failed_tasks}")
+        print(f"  💾 Cached: {stats_copy.cached_tasks}")
+
+        # Performance
+        if stats_copy.requests_per_second > 0:
             print(f"\n⚡ Performance:")
-            print(f"  Avg Response Time: {avg_response:.2f}s")
-            
-            if self.throughput_history:
-                avg_throughput = sum(self.throughput_history) / len(self.throughput_history)
-                print(f"  Avg Throughput: {avg_throughput:.2f} MB/s")
-        
-        # Active downloads
-        if self.active_downloads:
-            print(f"\n🔄 Active Downloads ({len(self.active_downloads)} workers):")
-            for worker_id, info in self.active_downloads.items():
-                elapsed = time.time() - info['start_time']
-                print(f"  Worker {worker_id}: {info.get('task_id', 'Unknown')} ({elapsed:.1f}s)")
-        
-        # Success rate
-        if self.download_counts['total'] > 0:
-            success_rate = (self.download_counts['successful'] / 
-                          (self.download_counts['successful'] + self.download_counts['failed'])) * 100
-            print(f"\n📈 Success Rate: {success_rate:.1f}%")
-        
-        print("\n" + "-" * 80)
-    
+            print(f"  Request Rate: {stats_copy.requests_per_second:.1f} req/s")
+            print(f"  Avg Response: {stats_copy.avg_response_time:.2f}s")
+
+            if stats_copy.bytes_downloaded > 0:
+                mb_downloaded = stats_copy.bytes_downloaded / (1024 * 1024)
+                print(f"  Downloaded: {mb_downloaded:.1f} MB")
+
+        # Workers status
+        if workers_copy:
+            active_count = sum(1 for w in workers_copy.values() if w.is_busy)
+            print(f"\n🔄 Workers ({active_count}/{len(workers_copy)} active):")
+
+            for worker in sorted(workers_copy.values(), key=lambda x: x.worker_id):
+                if worker.is_busy:
+                    elapsed = time.time() - worker.task_start_time if worker.task_start_time else 0
+                    print(f"  Worker {worker.worker_id}: {worker.current_task} ({elapsed:.1f}s)")
+                else:
+                    print(f"  Worker {worker.worker_id}: idle ({worker.tasks_completed} completed)")
+
+        # Progress bars
+        for name, progress in progress_copy.items():
+            total = progress['total']
+            completed = progress['completed']
+            if total > 0:
+                pct = (completed / total) * 100
+                bar_width = 30
+                filled = int(bar_width * completed / total)
+                bar = '█' * filled + '░' * (bar_width - filled)
+                print(f"  {name}: |{bar}| {pct:.1f}% ({completed}/{total})")
+
+        # Alerts
+        alerts = []
+        if stats_copy.waf_blocks > 0:
+            alerts.append(f"🚫 WAF blocks: {stats_copy.waf_blocks}")
+        if stats_copy.rate_limits > 0:
+            alerts.append(f"⏸️ Rate limits: {stats_copy.rate_limits}")
+
+        if alerts:
+            print(f"\n⚠️  Alerts: {' | '.join(alerts)}")
+
+        print(f"\nLast update: {datetime.now().strftime('%H:%M:%S')}")
+        if self.enable_web_api:
+            print(f"API: http://localhost:{self.web_port}/stats")
+        print("-" * 80)
+
+        # Force flush
+        sys.stdout.flush()
+
     def get_statistics(self) -> Dict[str, Any]:
-        """Get current statistics"""
-        with self.metrics_lock:
-            stats = {
-                'counts': self.download_counts.copy(),
-                'active_workers': len(self.active_downloads),
-                'metrics_count': len(self.metrics)
+        """Get current statistics (thread-safe)"""
+        with self.stats_lock:
+            return {
+                'stats': asdict(self.stats),
+                'workers': {k: asdict(v) for k, v in self.worker_states.items()},
+                'progress_bars': self.progress_bars.copy(),
+                'recent_events_count': len(self.recent_events),
+                'avg_response_time': self.stats.avg_response_time,
+                'requests_per_second': self.stats.requests_per_second
             }
-            
-            if self.response_times:
-                stats['avg_response_time'] = sum(self.response_times) / len(self.response_times)
-                stats['min_response_time'] = min(self.response_times)
-                stats['max_response_time'] = max(self.response_times)
-            
-            if self.throughput_history:
-                stats['avg_throughput_mbps'] = sum(self.throughput_history) / len(self.throughput_history)
-                stats['peak_throughput_mbps'] = max(self.throughput_history)
-            
-            return stats
-    
+
     def save_metrics(self):
-        """Save metrics to file"""
+        """Save metrics"""
         if not self.metrics_file:
             return
-        
+
         try:
-            # Convert metrics to serializable format
             metrics_data = {
                 'timestamp': datetime.now().isoformat(),
                 'statistics': self.get_statistics(),
-                'metrics': [m.to_dict() for m in self.metrics]
+                'events': [asdict(event) for event in list(self.recent_events)]
             }
-            
-            # Save to file
+
             with open(self.metrics_file, 'w') as f:
                 json.dump(metrics_data, f, indent=2)
-            
+
             logging.info(f"Metrics saved to {self.metrics_file}")
-            
         except Exception as e:
             logging.error(f"Failed to save metrics: {e}")
 
+    def _start_web_server(self):
+        """Start web server for monitoring API"""
+        try:
+            from http.server import HTTPServer, BaseHTTPRequestHandler
+            import json
 
-class PerformanceAnalyzer:
-    """Analyze performance metrics and provide recommendations"""
-    
-    def __init__(self, metrics: List[DownloadMetric]):
-        self.metrics = metrics
-    
-    def analyze(self) -> Dict[str, Any]:
-        """Perform comprehensive performance analysis"""
-        if not self.metrics:
-            return {'error': 'No metrics available'}
-        
-        analysis = {
-            'summary': self._analyze_summary(),
-            'bottlenecks': self._identify_bottlenecks(),
-            'patterns': self._analyze_patterns(),
-            'recommendations': self._generate_recommendations()
-        }
-        
-        return analysis
-    
-    def _analyze_summary(self) -> Dict:
-        """Analyze summary statistics"""
-        total = len(self.metrics)
-        successful = sum(1 for m in self.metrics if m.success)
-        failed = total - successful
-        
-        durations = [m.duration for m in self.metrics]
-        bytes_total = sum(m.bytes_downloaded for m in self.metrics)
-        
-        return {
-            'total_downloads': total,
-            'successful': successful,
-            'failed': failed,
-            'success_rate': (successful / total * 100) if total > 0 else 0,
-            'total_bytes': bytes_total,
-            'total_mb': bytes_total / (1024 * 1024),
-            'avg_duration': sum(durations) / len(durations) if durations else 0,
-            'min_duration': min(durations) if durations else 0,
-            'max_duration': max(durations) if durations else 0
-        }
-    
-    def _identify_bottlenecks(self) -> List[str]:
-        """Identify performance bottlenecks"""
-        bottlenecks = []
-        
-        # Check for high failure rate
-        summary = self._analyze_summary()
-        if summary['success_rate'] < 80:
-            bottlenecks.append(f"High failure rate: {100-summary['success_rate']:.1f}%")
-        
-        # Check for slow downloads
-        if summary['avg_duration'] > 5.0:
-            bottlenecks.append(f"Slow average download time: {summary['avg_duration']:.1f}s")
-        
-        # Check for retry storms
-        high_retry_count = sum(1 for m in self.metrics if m.retry_count > 2)
-        if high_retry_count > len(self.metrics) * 0.1:
-            bottlenecks.append(f"High retry rate: {high_retry_count} downloads needed >2 retries")
-        
-        # Check for worker imbalance
-        worker_loads = {}
-        for m in self.metrics:
-            worker_loads[m.worker_id] = worker_loads.get(m.worker_id, 0) + 1
-        
-        if worker_loads:
-            max_load = max(worker_loads.values())
-            min_load = min(worker_loads.values())
-            if max_load > min_load * 2:
-                bottlenecks.append(f"Worker load imbalance: {max_load} vs {min_load}")
-        
-        return bottlenecks
-    
-    def _analyze_patterns(self) -> Dict:
-        """Analyze download patterns"""
-        patterns = {}
-        
-        # Time-based patterns
-        if self.metrics:
-            start_time = min(m.timestamp for m in self.metrics)
-            end_time = max(m.timestamp for m in self.metrics)
-            total_duration = end_time - start_time
-            
-            patterns['total_duration'] = total_duration
-            patterns['downloads_per_second'] = len(self.metrics) / total_duration if total_duration > 0 else 0
-            
-            # Analyze by task type
-            by_type = {}
-            for m in self.metrics:
-                if m.task_type not in by_type:
-                    by_type[m.task_type] = {
-                        'count': 0,
-                        'success': 0,
-                        'total_duration': 0,
-                        'total_bytes': 0
-                    }
-                
-                by_type[m.task_type]['count'] += 1
-                if m.success:
-                    by_type[m.task_type]['success'] += 1
-                by_type[m.task_type]['total_duration'] += m.duration
-                by_type[m.task_type]['total_bytes'] += m.bytes_downloaded
-            
-            patterns['by_task_type'] = by_type
-        
-        return patterns
-    
-    def _generate_recommendations(self) -> List[str]:
-        """Generate performance recommendations"""
-        recommendations = []
-        summary = self._analyze_summary()
-        bottlenecks = self._identify_bottlenecks()
-        
-        # Based on success rate
-        if summary['success_rate'] < 80:
-            recommendations.append("Reduce worker count to improve stability")
-            recommendations.append("Enable rate limiting to avoid server rejection")
-        
-        # Based on duration
-        if summary['avg_duration'] > 5.0:
-            recommendations.append("Check network connectivity and latency")
-            recommendations.append("Consider using fewer workers if server is throttling")
-        elif summary['avg_duration'] < 1.0 and summary['success_rate'] > 95:
-            recommendations.append("Can safely increase worker count for better performance")
-        
-        # Based on bottlenecks
-        if any('retry' in b.lower() for b in bottlenecks):
-            recommendations.append("Implement exponential backoff for retries")
-            recommendations.append("Check for WAF or rate limiting on server")
-        
-        if any('imbalance' in b.lower() for b in bottlenecks):
-            recommendations.append("Use work-stealing queue for better load distribution")
-        
-        return recommendations
+            monitor = self
+
+            class MonitoringHandler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.path == '/stats':
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.end_headers()
+
+                        stats = monitor.get_statistics()
+                        self.wfile.write(json.dumps(stats).encode())
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
+
+                def log_message(self, format, *args):
+                    # Suppress HTTP logs to avoid spam
+                    pass
+
+            def run_server():
+                server = HTTPServer(('localhost', self.web_port), MonitoringHandler)
+                self.web_server = server
+                logging.info(f"Web monitoring API started on http://localhost:{self.web_port}/stats")
+                server.serve_forever()
+
+            web_thread = threading.Thread(target=run_server, daemon=True)
+            web_thread.start()
+
+        except Exception as e:
+            logging.warning(f"Could not start web server: {e}")
+
+    def _stop_web_server(self):
+        """Stop web server"""
+        if self.web_server:
+            self.web_server.shutdown()
 
 
-class MetricsExporter:
-    """Export metrics in various formats"""
-    
-    @staticmethod
-    def to_csv(metrics: List[DownloadMetric], filepath: Path):
-        """Export metrics to CSV"""
-        import csv
-        
-        with open(filepath, 'w', newline='') as f:
-            if not metrics:
-                return
-            
-            # Write header
-            fieldnames = ['timestamp', 'task_id', 'task_type', 'duration', 
-                         'success', 'bytes_downloaded', 'retry_count', 'worker_id']
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            # Write metrics
-            for metric in metrics:
-                writer.writerow(asdict(metric))
-        
-        logging.info(f"Metrics exported to CSV: {filepath}")
-    
-    @staticmethod
-    def to_json(metrics: List[DownloadMetric], filepath: Path):
-        """Export metrics to JSON"""
-        data = {
-            'export_time': datetime.now().isoformat(),
-            'metric_count': len(metrics),
-            'metrics': [m.to_dict() for m in metrics]
-        }
-        
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        logging.info(f"Metrics exported to JSON: {filepath}")
-    
-    @staticmethod
-    def to_prometheus(metrics: List[DownloadMetric]) -> str:
-        """Export metrics in Prometheus format"""
-        lines = []
-        
-        # Calculate aggregates
-        total = len(metrics)
-        successful = sum(1 for m in metrics if m.success)
-        failed = total - successful
-        total_bytes = sum(m.bytes_downloaded for m in metrics)
-        avg_duration = sum(m.duration for m in metrics) / total if total > 0 else 0
-        
-        # Format as Prometheus metrics
-        lines.append('# HELP gracenote2epg_downloads_total Total number of downloads')
-        lines.append('# TYPE gracenote2epg_downloads_total counter')
-        lines.append(f'gracenote2epg_downloads_total {total}')
-        
-        lines.append('# HELP gracenote2epg_downloads_successful Successful downloads')
-        lines.append('# TYPE gracenote2epg_downloads_successful counter')
-        lines.append(f'gracenote2epg_downloads_successful {successful}')
-        
-        lines.append('# HELP gracenote2epg_downloads_failed Failed downloads')
-        lines.append('# TYPE gracenote2epg_downloads_failed counter')
-        lines.append(f'gracenote2epg_downloads_failed {failed}')
-        
-        lines.append('# HELP gracenote2epg_bytes_downloaded Total bytes downloaded')
-        lines.append('# TYPE gracenote2epg_bytes_downloaded counter')
-        lines.append(f'gracenote2epg_bytes_downloaded {total_bytes}')
-        
-        lines.append('# HELP gracenote2epg_download_duration_seconds Average download duration')
-        lines.append('# TYPE gracenote2epg_download_duration_seconds gauge')
-        lines.append(f'gracenote2epg_download_duration_seconds {avg_duration:.3f}')
-        
-        return '\n'.join(lines)
+class ProgressTracker:
+    """Progress tracker for specific batch"""
+
+    def __init__(self, monitor: EventDrivenMonitor, name: str):
+        self.monitor = monitor
+        self.name = name
+
+    def update(self, completed: int):
+        """Update progress"""
+        with self.monitor.stats_lock:
+            if self.name in self.monitor.progress_bars:
+                self.monitor.progress_bars[self.name]['completed'] = completed
+
+    def increment(self):
+        """Increment progress by 1"""
+        with self.monitor.stats_lock:
+            if self.name in self.monitor.progress_bars:
+                self.monitor.progress_bars[self.name]['completed'] += 1
+
+
+class MonitoringMixin:
+    """Mixin to add monitoring support to download classes"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.monitor: Optional[EventDrivenMonitor] = None
+
+    def set_monitor(self, monitor: EventDrivenMonitor):
+        """Associate monitor"""
+        self.monitor = monitor
+
+    def emit_event(self, event_type: EventType, worker_id: int, task_id: str = None, **data):
+        """Emit event if monitor is configured"""
+        if self.monitor:
+            self.monitor.emit_event(event_type, worker_id, task_id, **data)
