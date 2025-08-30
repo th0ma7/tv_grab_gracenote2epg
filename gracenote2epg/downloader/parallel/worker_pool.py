@@ -88,9 +88,9 @@ class WorkerPool:
         self.current_workers = initial_workers
         self.min_workers = 1
 
-        # Worker state tracking
+        # Worker state tracking - start IDs from 1, not 0
         self.worker_states: Dict[int, WorkerState] = {}
-        self.worker_id_counter = 0
+        self.worker_id_counter = 0  # Counter starts at 0, but first worker gets ID 1
         self.worker_id_map = {}
         self.thread_local = threading.local()
         self.stats_lock = threading.Lock()
@@ -102,14 +102,35 @@ class WorkerPool:
         self.performance_history = []
         self.last_adjustment = 0
 
+        # Monitoring callback
+        self.monitor_callback: Optional[Callable] = None
+
+    def set_monitor_callback(self, callback: Callable):
+        """Set monitoring callback to emit events"""
+        self.monitor_callback = callback
+        logging.debug("Monitor callback set for WorkerPool")
+
+    def _emit_worker_event(self, event_type: str, **data):
+        """Emit worker-related event to monitor"""
+        if self.monitor_callback:
+            try:
+                self.monitor_callback(event_type, 0, **data)
+                logging.debug("Emitted worker event: %s", event_type)
+            except Exception as e:
+                logging.debug("Error in monitor callback: %s", e)
+        else:
+            logging.debug("No monitor callback available for event: %s", event_type)
+
     def _get_worker_id(self) -> int:
-        """Get unique worker ID for current thread"""
+        """Get unique worker ID for current thread - starts from 1"""
         thread_id = threading.get_ident()
         if thread_id not in self.worker_id_map:
             with self.stats_lock:
-                self.worker_id_counter += 1
-                self.worker_id_map[thread_id] = self.worker_id_counter
-                self.worker_states[self.worker_id_counter] = WorkerState(self.worker_id_counter)
+                self.worker_id_counter += 1  # First worker gets ID 1
+                worker_id = self.worker_id_counter
+                self.worker_id_map[thread_id] = worker_id
+                self.worker_states[worker_id] = WorkerState(worker_id)
+                logging.debug("Created worker %d for thread %s", worker_id, thread_id)
         return self.worker_id_map[thread_id]
 
     def _get_worker_state(self) -> WorkerState:
@@ -125,6 +146,12 @@ class WorkerPool:
             old_workers = self.current_workers
             self.current_workers = target_workers
             self.last_adjustment = time.time()
+
+            # Emit worker adjustment event
+            self._emit_worker_event('worker_count_changed',
+                                   old_count=old_workers,
+                                   new_count=target_workers,
+                                   reason=reason)
 
             logging.info("Worker count adjusted from %d to %d (%s)",
                         old_workers, target_workers, reason)
@@ -171,6 +198,11 @@ class WorkerPool:
 
         # Use current worker count, not initial
         effective_workers = min(self.current_workers, len(tasks))
+
+        # Emit execution start event with current worker count
+        self._emit_worker_event('batch_execution_started',
+                               effective_workers=effective_workers,
+                               total_tasks=len(tasks))
 
         with ThreadPoolExecutor(max_workers=effective_workers) as executor:
             # Submit all tasks
@@ -232,6 +264,11 @@ class WorkerPool:
 
                 executor.shutdown(wait=False)
                 raise
+
+        # Emit execution completed event
+        self._emit_worker_event('batch_execution_completed',
+                               completed_tasks=len(results),
+                               current_workers=self.current_workers)
 
         return results
 

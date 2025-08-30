@@ -31,6 +31,7 @@ class EventType(Enum):
     BATCH_COMPLETED = "batch_completed"
     RATE_LIMIT_HIT = "rate_limit_hit"
     WAF_DETECTED = "waf_detected"
+    WORKER_COUNT_CHANGED = "worker_count_changed"
 
 
 @dataclass
@@ -75,6 +76,7 @@ class RealTimeStats:
     failed_tasks: int = 0
     cached_tasks: int = 0
     active_workers: int = 0
+    current_worker_count: int = 0
     bytes_downloaded: int = 0
     requests_per_second: float = 0.0
     avg_response_time: float = 0.0
@@ -267,47 +269,54 @@ class EventDrivenMonitor:
         """Process individual event"""
         worker_id = event.worker_id
 
-        # Initialize worker state if needed
-        if worker_id not in self.worker_states:
+        # Initialize worker state if needed (starting from worker ID 1)
+        if worker_id > 0 and worker_id not in self.worker_states:
             self.worker_states[worker_id] = WorkerState(worker_id=worker_id)
 
-        worker_state = self.worker_states[worker_id]
+        # Only process worker events for valid worker IDs (> 0)
+        if worker_id > 0:
+            worker_state = self.worker_states[worker_id]
 
-        # Process by event type
-        if event.event_type == EventType.TASK_STARTED:
-            worker_state.is_busy = True
-            worker_state.current_task = event.task_id
-            worker_state.task_start_time = event.timestamp
-            worker_state.last_activity = event.timestamp
+            # Process by event type
+            if event.event_type == EventType.TASK_STARTED:
+                worker_state.is_busy = True
+                worker_state.current_task = event.task_id
+                worker_state.task_start_time = event.timestamp
+                worker_state.last_activity = event.timestamp
 
-        elif event.event_type == EventType.TASK_COMPLETED:
-            worker_state.tasks_completed += 1
-            worker_state.reset_task()
-            self.stats.completed_tasks += 1
+            elif event.event_type == EventType.TASK_COMPLETED:
+                if worker_id in self.worker_states:
+                    worker_state.tasks_completed += 1
+                    worker_state.reset_task()
+                self.stats.completed_tasks += 1
 
-            # Record response time
-            duration = event.data.get('duration', 0)
-            if duration > 0:
-                self.response_times.append(duration)
-
-            # Record bytes downloaded
-            bytes_dl = event.data.get('bytes_downloaded', 0)
-            if bytes_dl > 0:
-                worker_state.bytes_downloaded += bytes_dl
-                self.stats.bytes_downloaded += bytes_dl
-
-                # Calculate throughput
+                # Record response time
+                duration = event.data.get('duration', 0)
                 if duration > 0:
-                    throughput_mbps = (bytes_dl / (1024 * 1024)) / duration
-                    self.throughput_history.append((event.timestamp, throughput_mbps))
+                    self.response_times.append(duration)
 
-        elif event.event_type == EventType.TASK_FAILED:
-            worker_state.tasks_failed += 1
-            worker_state.reset_task()
-            self.stats.failed_tasks += 1
+                # Record bytes downloaded
+                bytes_dl = event.data.get('bytes_downloaded', 0)
+                if bytes_dl > 0:
+                    if worker_id in self.worker_states:
+                        worker_state.bytes_downloaded += bytes_dl
+                    self.stats.bytes_downloaded += bytes_dl
 
-        elif event.event_type == EventType.BATCH_STARTED:
+                    # Calculate throughput
+                    if duration > 0:
+                        throughput_mbps = (bytes_dl / (1024 * 1024)) / duration
+                        self.throughput_history.append((event.timestamp, throughput_mbps))
+
+            elif event.event_type == EventType.TASK_FAILED:
+                if worker_id in self.worker_states:
+                    worker_state.tasks_failed += 1
+                    worker_state.reset_task()
+                self.stats.failed_tasks += 1
+
+        # Process global events regardless of worker ID
+        if event.event_type == EventType.BATCH_STARTED:
             self.stats.total_tasks = event.data.get('total_tasks', 0)
+            self.stats.cached_tasks += event.data.get('cached_tasks', 0)
 
         elif event.event_type == EventType.WAF_DETECTED:
             self.stats.waf_blocks += 1
@@ -327,10 +336,13 @@ class EventDrivenMonitor:
 
     def _update_derived_stats(self):
         """Update derived statistics"""
-        # Active workers
+        # Active workers (only count workers with ID > 0)
         self.stats.active_workers = sum(
-            1 for ws in self.worker_states.values() if ws.is_busy
+            1 for ws in self.worker_states.values() if ws.is_busy and ws.worker_id > 0
         )
+
+        # Current worker count (total registered valid workers)
+        self.stats.current_worker_count = len([w for w in self.worker_states.keys() if w > 0])
 
         # Average response time
         if self.response_times:
@@ -360,10 +372,11 @@ class EventDrivenMonitor:
                 logging.error("Error updating console: %s", e)
 
     def _render_console(self):
-        """Render optimized console display"""
+        """Render optimized console display with improved alignment"""
         with self.stats_lock:
             stats_copy = RealTimeStats(**asdict(self.stats))
-            workers_copy = {k: WorkerState(**asdict(v)) for k, v in self.worker_states.items()}
+            # Only include valid workers (ID > 0) and sort them properly
+            workers_copy = {k: WorkerState(**asdict(v)) for k, v in self.worker_states.items() if k > 0}
             progress_copy = self.progress_bars.copy()
 
         # Clear screen
@@ -378,56 +391,98 @@ class EventDrivenMonitor:
         print("GRACENOTE2EPG - REAL-TIME MONITOR")
         print("=" * 80)
 
-        # Main statistics
-        print(f"\n📊 Download Statistics:")
-        completion_pct = stats_copy.get_completion_percentage()
-        print(f"  Progress: {completion_pct:.1f}% ({stats_copy.completed_tasks + stats_copy.cached_tasks}/{stats_copy.total_tasks})")
-        print(f"  ✅ Completed: {stats_copy.completed_tasks}")
-        print(f"  ❌ Failed: {stats_copy.failed_tasks}")
-        print(f"  💾 Cached: {stats_copy.cached_tasks}")
-
-        # Performance
-        if stats_copy.requests_per_second > 0:
-            print(f"\n⚡ Performance:")
-            print(f"  Request Rate: {stats_copy.requests_per_second:.1f} req/s")
-            print(f"  Avg Response: {stats_copy.avg_response_time:.2f}s")
-
-            if stats_copy.bytes_downloaded > 0:
-                mb_downloaded = stats_copy.bytes_downloaded / (1024 * 1024)
-                print(f"  Downloaded: {mb_downloaded:.1f} MB")
-
-        # Workers status
+        # Workers status with actual count (only show valid workers)
         if workers_copy:
             active_count = sum(1 for w in workers_copy.values() if w.is_busy)
-            print(f"\n🔄 Workers ({active_count}/{len(workers_copy)} active):")
+            total_workers = len(workers_copy)
+            print(f"\nWorkers ({active_count}/{total_workers} active):")
 
+            # Sort workers by ID for consistent display
             for worker in sorted(workers_copy.values(), key=lambda x: x.worker_id):
                 if worker.is_busy:
                     elapsed = time.time() - worker.task_start_time if worker.task_start_time else 0
-                    print(f"  Worker {worker.worker_id}: {worker.current_task} ({elapsed:.1f}s)")
+                    task_display = worker.current_task[:10] if worker.current_task else "unknown"
+                    print(f"  Worker {worker.worker_id}: {task_display} ({elapsed:.1f}s)")
                 else:
                     print(f"  Worker {worker.worker_id}: idle ({worker.tasks_completed} completed)")
 
-        # Progress bars
-        for name, progress in progress_copy.items():
-            total = progress['total']
-            completed = progress['completed']
-            if total > 0:
-                pct = (completed / total) * 100
-                bar_width = 30
-                filled = int(bar_width * completed / total)
-                bar = '█' * filled + '░' * (bar_width - filled)
-                print(f"  {name}: |{bar}| {pct:.1f}% ({completed}/{total})")
+        # Progress bars with improved alignment and chronological order
+        if progress_copy:
+            print()  # Add spacing before progress bars
+
+            # Calculate maximum name width for alignment
+            max_name_width = max(len(name) for name in progress_copy.keys()) if progress_copy else 0
+            max_name_width = max(max_name_width, 16)  # Minimum width for readability
+
+            # Define chronological order for progress bars
+            progress_order = [
+                "Downloading Guide",
+                "Parsing Guide",
+                "Downloading Details",
+                "Processing Details",
+                "Generating XMLTV"
+            ]
+
+            # Display progress bars in chronological order
+            displayed_names = set()
+            for ordered_name in progress_order:
+                if ordered_name in progress_copy:
+                    displayed_names.add(ordered_name)
+                    name = ordered_name
+                    progress = progress_copy[name]
+                    total = progress['total']
+                    completed = progress['completed']
+
+                    # Get cache info if available
+                    cached = progress.get('cached', 0)
+
+                    if total > 0:
+                        pct = (completed / total) * 100
+                        bar_width = 30
+                        filled = int(bar_width * completed / total)
+                        bar = '█' * filled + '░' * (bar_width - filled)
+
+                        # Enhanced formatting with cache info
+                        name_padded = name.ljust(max_name_width)
+                        if cached > 0:
+                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total}, {cached} cached)")
+                        else:
+                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+
+            # Display any remaining progress bars not in the predefined order
+            for name in sorted(progress_copy.keys()):
+                if name not in displayed_names:
+                    progress = progress_copy[name]
+                    total = progress['total']
+                    completed = progress['completed']
+                    cached = progress.get('cached', 0)
+
+                    if total > 0:
+                        pct = (completed / total) * 100
+                        bar_width = 30
+                        filled = int(bar_width * completed / total)
+                        bar = '█' * filled + '░' * (bar_width - filled)
+
+                        # Enhanced formatting with cache info
+                        name_padded = name.ljust(max_name_width)
+                        if cached > 0:
+                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total}, {cached} cached)")
+                        else:
+                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+
+        # Performance summary (simplified)
+        if stats_copy.requests_per_second > 0 and any(w.is_busy for w in workers_copy.values()):
+            print(f"\nCurrent: {stats_copy.requests_per_second:.1f} req/s, {stats_copy.avg_response_time:.2f}s avg")
 
         # Alerts
         alerts = []
         if stats_copy.waf_blocks > 0:
-            alerts.append(f"🚫 WAF blocks: {stats_copy.waf_blocks}")
+            alerts.append(f"WAF blocks: {stats_copy.waf_blocks}")
         if stats_copy.rate_limits > 0:
-            alerts.append(f"⏸️ Rate limits: {stats_copy.rate_limits}")
+            alerts.append(f"Rate limits: {stats_copy.rate_limits}")
 
         if alerts:
-            print(f"\n⚠️  Alerts: {' | '.join(alerts)}")
+            print(f"\nAlerts: {' | '.join(alerts)}")
 
         print(f"\nLast update: {datetime.now().strftime('%H:%M:%S')}")
         if self.enable_web_api:
@@ -440,9 +495,12 @@ class EventDrivenMonitor:
     def get_statistics(self) -> Dict[str, Any]:
         """Get current statistics (thread-safe)"""
         with self.stats_lock:
+            # Only include valid workers (ID > 0)
+            valid_workers = {k: asdict(v) for k, v in self.worker_states.items() if k > 0}
+
             return {
                 'stats': asdict(self.stats),
-                'workers': {k: asdict(v) for k, v in self.worker_states.items()},
+                'workers': valid_workers,
                 'progress_bars': self.progress_bars.copy(),
                 'recent_events_count': len(self.recent_events),
                 'avg_response_time': self.stats.avg_response_time,

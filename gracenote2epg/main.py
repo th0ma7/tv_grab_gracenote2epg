@@ -436,12 +436,74 @@ def main():
                         "Extended details download had issues, using basic descriptions"
                     )
 
-            # Generate XMLTV
+            # Generate XMLTV with progress tracking
             xmltv_start = time.time()
             xmltv_generator = XmltvGenerator(cache_manager)
+
+            # Create XML generation progress tracker if monitoring enabled
+            xml_progress_tracker = None
+            if monitor:
+                # Estimate number of items to process for XML generation
+                total_episodes = sum(
+                    len([ep for ep in station.keys() if not ep.startswith("ch")])
+                    for station in guide_parser.schedule.values()
+                )
+                xml_progress_tracker = monitor.create_progress_tracker("Generating XMLTV", total_episodes)
+
+                # Start XML generation progress at 0
+                xml_progress_tracker.update(0)
+                logging.info("Starting XMLTV generation for %d episodes", total_episodes)
+
+            # Generate XMLTV - simulate progress updates since XmltvGenerator doesn't support callbacks
+            import threading
+
+            def simulate_xmltv_progress():
+                """Simulate gradual progress for XMLTV generation"""
+                if not xml_progress_tracker:
+                    return
+
+                total_episodes = sum(
+                    len([ep for ep in station.keys() if not ep.startswith("ch")])
+                    for station in guide_parser.schedule.values()
+                )
+
+                # Simulate progress over estimated time (roughly proportional to episode count)
+                estimated_time = max(2, total_episodes / 1000)  # Rough estimate: 1000 episodes/second
+                intervals = 20  # Update 20 times during generation
+                sleep_time = estimated_time / intervals
+
+                for i in range(1, intervals):
+                    time.sleep(sleep_time)
+                    progress = int((i / intervals) * total_episodes)
+                    xml_progress_tracker.update(progress)
+
+                    # Log intermediate progress
+                    if i % 5 == 0:  # Every 5 intervals
+                        percent = (i / intervals) * 100
+                        logging.info("XMLTV generation progress: %.0f%% (%d/%d episodes)",
+                                   percent, progress, total_episodes)
+
+            # Start progress simulation in background
+            if xml_progress_tracker:
+                progress_thread = threading.Thread(target=simulate_xmltv_progress, daemon=True)
+                progress_thread.start()
+
+            # Generate XMLTV without progress callback (not supported by XmltvGenerator)
             xmltv_success = xmltv_generator.generate_xmltv(
-                schedule=guide_parser.schedule, config=config, xmltv_file=xmltv_file
+                schedule=guide_parser.schedule,
+                config=config,
+                xmltv_file=xmltv_file
             )
+
+            # Complete progress tracker
+            if xml_progress_tracker:
+                total_episodes = sum(
+                    len([ep for ep in station.keys() if not ep.startswith("ch")])
+                    for station in guide_parser.schedule.values()
+                )
+                xml_progress_tracker.update(total_episodes)
+                logging.info("XMLTV generation completed: %d episodes processed", total_episodes)
+
             xmltv_generation_time = time.time() - xmltv_start
 
             if not xmltv_success:

@@ -181,7 +181,7 @@ class UnifiedGuideParser:
 
         # Prepare download tasks and count what will actually be downloaded
         tasks = []
-        download_tasks = 0
+        download_tasks_count = 0
         cached_tasks = 0
         grid_time = grid_time_start
 
@@ -198,7 +198,7 @@ class UnifiedGuideParser:
             if cached_content and not needs_refresh:
                 cached_tasks += 1
             else:
-                download_tasks += 1
+                download_tasks_count += 1
 
             # Build download URL
             url = self._build_gracenote_url(lineup_config, grid_time)
@@ -212,18 +212,31 @@ class UnifiedGuideParser:
 
             grid_time = grid_time + 10800  # Next 3-hour block
 
+        # Create downloading progress tracker if monitoring enabled - ONLY for actual downloads
+        download_progress_tracker = None
+        if self.monitor and download_tasks_count > 0:
+            download_progress_tracker = self.monitor.create_progress_tracker("Downloading Guide", download_tasks_count)
+            # Store cache info in progress tracker
+            with self.monitor.stats_lock:
+                if download_progress_tracker.name in self.monitor.progress_bars:
+                    self.monitor.progress_bars[download_progress_tracker.name]['cached'] = cached_tasks
+
         # Log actual download vs cache stats
-        if download_tasks > 0:
+        if download_tasks_count > 0:
             logging.info("Starting parallel guide block download: %d blocks, %d workers",
-                        download_tasks, self.max_workers)
+                        download_tasks_count, self.max_workers)
             if cached_tasks > 0:
                 logging.info("  Will download: %d new blocks, use %d cached blocks",
-                            download_tasks, cached_tasks)
+                            download_tasks_count, cached_tasks)
         else:
             logging.info("All %d blocks found in cache, no downloads needed", cached_tasks)
 
-        # Dynamic progress callback based on download count
-        def progress_callback(completed, total):
+        # Dynamic progress callback for download progress tracker
+        def download_progress_callback(completed, total):
+            # Update progress tracker for actual downloads only
+            if download_progress_tracker:
+                download_progress_tracker.update(completed)
+
             if total == 0:
                 return
 
@@ -232,8 +245,18 @@ class UnifiedGuideParser:
 
             if completed % interval == 0 or completed == total:
                 percent = (completed / total * 100) if total > 0 else 0
-                logging.info("Guide download progress: %d/%d blocks (%.1f%%)",
-                           completed, total, percent)
+
+                # Smart percentage formatting based on total count
+                if total >= 100:
+                    # Large datasets: round to nearest 5%
+                    rounded_percent = round(percent / 5) * 5
+                    formatted_percent = f"{rounded_percent:.0f}%"
+                else:
+                    # Small to medium datasets: round to nearest unit (no decimals)
+                    formatted_percent = f"{percent:.0f}%"
+
+                logging.info("Guide download progress: %d/%d blocks (%s)",
+                           completed, total, formatted_percent)
 
         # Download blocks using guide manager
         download_start = time.time()
@@ -242,19 +265,19 @@ class UnifiedGuideParser:
             cache_manager=self.cache_manager,
             config_manager=config_manager,
             refresh_hours=refresh_hours,
-            progress_callback=progress_callback
+            progress_callback=download_progress_callback
         )
         download_time = time.time() - download_start
-
-        # Parse downloaded/cached blocks
-        parse_start = time.time()
-        parse_success = 0
-        parse_failed = 0
 
         # Create parsing progress tracker if monitoring enabled
         parsing_tracker = None
         if self.monitor:
             parsing_tracker = self.monitor.create_progress_tracker("Parsing Guide", len(tasks))
+
+        # Parse downloaded/cached blocks
+        parse_start = time.time()
+        parse_success = 0
+        parse_failed = 0
 
         for task_index, task in enumerate(tasks):
             filename = task['filename']
@@ -354,10 +377,23 @@ class UnifiedGuideParser:
 
         for series_id in series_list:
             cached_details = self.cache_manager.load_series_details(series_id)
-            if cached_details:
-                cached_count += 1
+            if cached_details and isinstance(cached_details, dict) and len(cached_details) > 0:
+                # Additional validation - check for essential keys
+                if any(key in cached_details for key in ['seriesDescription', 'seriesGenres', 'overviewTab', 'upcomingEpisodeTab']):
+                    cached_count += 1
+                else:
+                    download_count += 1
             else:
                 download_count += 1
+
+        # Create downloading progress tracker if monitoring enabled - ONLY for actual downloads
+        download_details_tracker = None
+        if self.monitor and download_count > 0:
+            download_details_tracker = self.monitor.create_progress_tracker("Downloading Details", download_count)
+            # Store cache info in progress tracker
+            with self.monitor.stats_lock:
+                if download_details_tracker.name in self.monitor.progress_bars:
+                    self.monitor.progress_bars[download_details_tracker.name]['cached'] = cached_count
 
         # Log actual download vs cache stats
         if download_count > 0:
@@ -369,8 +405,12 @@ class UnifiedGuideParser:
         else:
             logging.info("All %d series found in cache, no downloads needed", cached_count)
 
-        # Dynamic progress callback based on actual download count
-        def progress_callback(completed, total):
+        # Dynamic progress callback for series download progress tracker
+        def series_progress_callback(completed, total):
+            # Update progress tracker for actual downloads only
+            if download_details_tracker:
+                download_details_tracker.update(completed)
+
             if total == 0:
                 return
 
@@ -379,22 +419,27 @@ class UnifiedGuideParser:
 
             if completed % interval == 0 or completed == total:
                 percent = (completed / total * 100) if total > 0 else 0
-                logging.info("Series details progress: %d/%d (%.1f%%)",
-                           completed, total, percent)
+
+                # Smart percentage formatting based on total count
+                if total >= 100:
+                    # Large datasets (like 369 series): round to nearest 5%
+                    rounded_percent = round(percent / 5) * 5
+                    formatted_percent = f"{rounded_percent:.0f}%"
+                else:
+                    # Small to medium datasets: round to nearest unit (no decimals)
+                    formatted_percent = f"{percent:.0f}%"
+
+                logging.info("Series details progress: %d/%d (%s)",
+                           completed, total, formatted_percent)
 
         # Download series details using series manager
         download_start = time.time()
         series_details = self.series_manager.download_series_details(
             series_list=series_list,
             cache_manager=self.cache_manager,
-            progress_callback=progress_callback
+            progress_callback=series_progress_callback
         )
         download_time = time.time() - download_start
-
-        # Process downloaded details with enhanced monitoring
-        process_start = time.time()
-        processed_count = 0
-        failed_count = 0
 
         # Create processing progress tracker if monitoring enabled
         processing_tracker = None
@@ -405,6 +450,11 @@ class UnifiedGuideParser:
                 if not episode.startswith("ch") and self.schedule[station][episode].get("epseries")
             )
             processing_tracker = self.monitor.create_progress_tracker("Processing Details", total_episodes)
+
+        # Process downloaded details with enhanced monitoring
+        process_start = time.time()
+        processed_count = 0
+        failed_count = 0
 
         for station in self.schedule:
             sdict = self.schedule[station]

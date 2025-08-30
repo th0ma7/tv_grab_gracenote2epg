@@ -75,15 +75,45 @@ class ParallelDownloadManager(MonitoringMixin):
         # Set monitor
         self.set_monitor(monitor)
 
+        # Connect worker pool to monitoring if available
+        if self.monitor:
+            self.worker_pool.set_monitor_callback(self._worker_pool_event_callback)
+
+        # Connect rate controller to worker pool for aggressive reduction
+        if self.rate_controller:
+            self.rate_controller.set_worker_reduction_callback(self._handle_worker_reduction)
+
         # Thread-local downloader storage
         self.thread_local_storage = {}
 
         if log_initialization:
             logging.info(
-                "Parallel download manager initialized: %d workers, monitoring %s",
+                "Parallel download manager initialized: %d workers, monitoring %s, rate limiting %s",
                 max_workers,
-                "enabled" if monitor else "disabled"
+                "enabled" if monitor else "disabled",
+                "enabled" if enable_rate_limiting else "disabled"
             )
+
+    def _handle_worker_reduction(self, reason: str):
+        """Handle worker reduction triggered by rate controller"""
+        current_workers = self.worker_pool.current_workers
+
+        if reason == "waf_block":
+            # WAF block: reduce to 1 worker immediately
+            new_count = 1
+            logging.warning("WAF block detected - reducing workers to %d (from %d)", new_count, current_workers)
+        elif reason in ["rate_limit_429", "server_overload"]:
+            # Rate limiting: reduce by half, minimum 1
+            new_count = max(1, current_workers // 2)
+            logging.warning("Rate limiting (%s) - reducing workers to %d (from %d)", reason, new_count, current_workers)
+        else:
+            # Other reasons: conservative reduction
+            new_count = max(1, current_workers - 1)
+            logging.warning("Worker reduction (%s) - reducing workers to %d (from %d)", reason, new_count, current_workers)
+
+        if new_count != current_workers:
+            self.worker_pool.adjust_worker_count(new_count, f"rate controller ({reason})")
+            self.statistics.record_worker_reduction()
 
     @property
     def current_workers(self) -> int:
@@ -130,6 +160,25 @@ class ParallelDownloadManager(MonitoringMixin):
             self.statistics.record_rate_limit()
             self.emit_event(EventType.RATE_LIMIT_HIT, worker_id, **data)
 
+    def _worker_pool_event_callback(self, event_type: str, worker_id: int, **data):
+        """Callback to receive events from worker pool"""
+        if event_type == 'worker_count_changed':
+            old_count = data.get('old_count', 0)
+            new_count = data.get('new_count', 0)
+            reason = data.get('reason', 'unknown')
+
+            # Update monitoring with new worker count
+            if self.monitor:
+                with self.monitor.stats_lock:
+                    # Ensure we have worker states up to new_count
+                    for i in range(1, new_count + 1):
+                        if i not in self.monitor.worker_states:
+                            from ..monitoring import WorkerState
+                            self.monitor.worker_states[i] = WorkerState(worker_id=i)
+
+                    # Update current worker count in stats
+                    self.monitor.stats.current_worker_count = new_count
+
     def _execute_download_task(self, task: DownloadTask) -> tuple[str, bool, Optional[bytes]]:
         """Execute a single download task with rate limiting and monitoring"""
         worker_id = self.worker_pool._get_worker_id()
@@ -169,11 +218,21 @@ class ParallelDownloadManager(MonitoringMixin):
 
             duration = time.time() - start_time
 
-            # Update rate controller
+            # Update rate controller with detailed response info
             if self.rate_controller:
+                response_text = ""
+                status_code = None
+
+                if content:
+                    try:
+                        response_text = content.decode('utf-8', errors='ignore')[:1000]  # First 1000 chars
+                    except:
+                        response_text = ""
+
                 self.rate_controller.after_request(
                     success=content is not None,
-                    response_text=content.decode('utf-8', errors='ignore') if content else "",
+                    response_text=response_text,
+                    status_code=status_code,
                     error=None
                 )
 
@@ -186,7 +245,7 @@ class ParallelDownloadManager(MonitoringMixin):
                     duration=duration, bytes_downloaded=len(content)
                 )
 
-                logging.info("Download %s: Success (%d bytes)", task.task_id, len(content))
+                logging.debug("Download %s: Success (%d bytes)", task.task_id, len(content))
                 return task.task_id, True, content
             else:
                 # Failure
@@ -204,22 +263,35 @@ class ParallelDownloadManager(MonitoringMixin):
 
             self.statistics.record_failure()
 
-            # Handle specific errors
-            if "429" in error_str or "Too Many Requests" in error_str:
-                self.statistics.record_rate_limit()
-                if self.worker_pool.current_workers > 1:
-                    self.worker_pool.reduce_workers_for_rate_limiting()
-                    self.statistics.record_worker_reduction()
+            # Extract status code from error if available
+            status_code = None
+            if "429" in error_str:
+                status_code = 429
+            elif "403" in error_str:
+                status_code = 403
+            elif "502" in error_str:
+                status_code = 502
+            elif "503" in error_str:
+                status_code = 503
+            elif "504" in error_str:
+                status_code = 504
 
-            # Update rate controller
+            # Update rate controller with error details
             if self.rate_controller:
                 self.rate_controller.after_request(
                     success=False,
+                    response_text="",
+                    status_code=status_code,
                     error=error_str
                 )
 
+            # Additional statistics for specific errors
+            if status_code == 429 or "Too Many Requests" in error_str:
+                self.statistics.record_rate_limit()
+                logging.warning("Download %s: Rate limited (429)", task.task_id)
+
             self.emit_event(EventType.TASK_FAILED, worker_id, task.task_id,
-                          duration=duration, error=error_str)
+                          duration=duration, error=error_str, status_code=status_code)
 
             logging.error("Download %s: Exception - %s", task.task_id, error_str)
             return task.task_id, False, None
@@ -240,11 +312,8 @@ class ParallelDownloadManager(MonitoringMixin):
         # Reset statistics for this batch
         self.statistics.reset()
 
-        # Emit batch started event
-        self.emit_event(EventType.BATCH_STARTED, 0, None,
-                       total_tasks=len(tasks), task_type="guide_blocks")
-
         # Process tasks - separate downloads from cache hits
+        cached_count = 0
         for task_info in tasks:
             grid_time = task_info['grid_time']
             filename = task_info['filename']
@@ -258,10 +327,19 @@ class ParallelDownloadManager(MonitoringMixin):
             if cached_content and not needs_refresh:
                 results[filename] = cached_content
                 self.statistics.record_cached()
+                if self.monitor:
+                    self.monitor.stats.cached_tasks += 1
+                cached_count += 1
                 logging.debug("Using cached: %s", filename)
             else:
                 download_task = create_guide_task(grid_time, filename, url)
                 download_tasks.append(download_task)
+
+        # Emit batch started event with correct cached count
+        self.emit_event(EventType.BATCH_STARTED, 0, None,
+               total_tasks=len(tasks),
+               cached_tasks=cached_count,
+               task_type="guide_blocks")
 
         # Execute downloads
         if download_tasks:
@@ -301,6 +379,10 @@ class ParallelDownloadManager(MonitoringMixin):
         self.emit_event(EventType.BATCH_COMPLETED, 0, None,
                        total_time=elapsed, successful_tasks=self.statistics.get_stats_copy()['successful'])
 
+        # Try rate recovery after successful batch
+        if self.rate_controller:
+            self.rate_controller.try_recover_rate()
+
         # Log summary
         reporter = DetailedStatisticsReporter(
             self.statistics, self.current_workers, self.original_max_workers,
@@ -320,6 +402,7 @@ class ParallelDownloadManager(MonitoringMixin):
         start_time = time.time()
         results = {}
         download_tasks = []
+        download_results = {}  # Initialize to prevent UnboundLocalError
 
         # Emit batch started event
         self.emit_event(EventType.BATCH_STARTED, 0, None,
@@ -363,16 +446,24 @@ class ParallelDownloadManager(MonitoringMixin):
             # Restore original worker count
             self.worker_pool.current_workers = original_workers
 
-            # Process results
+            # Process results with explicit cache saving
             for task_id, result in download_results.items():
                 if result.success and result.content:
                     try:
                         details = json.loads(result.content)
-                        if cache_manager.save_series_details(task_id, result.content):
+                        # Force cache save and verify
+                        save_success = cache_manager.save_series_details(task_id, result.content)
+                        if save_success:
                             results[task_id] = details
-                            logging.debug("Saved series details: %s", task_id)
+                            logging.debug("Saved series details to cache: %s", task_id)
+                        else:
+                            logging.warning("Failed to save series details to cache: %s", task_id)
+                            # Still include in results even if cache save failed
+                            results[task_id] = details
                     except json.JSONDecodeError:
                         logging.warning("Invalid JSON for series: %s", task_id)
+                    except Exception as e:
+                        logging.warning("Error processing series %s: %s", task_id, str(e))
 
         # Update statistics and emit completion
         elapsed = time.time() - start_time
@@ -381,12 +472,26 @@ class ParallelDownloadManager(MonitoringMixin):
         self.emit_event(EventType.BATCH_COMPLETED, 0, None,
                        total_time=elapsed, successful_tasks=self.statistics.get_stats_copy()['successful'])
 
-        # Log summary
+        # Try rate recovery after successful batch
+        if self.rate_controller:
+            self.rate_controller.try_recover_rate()
+
+        # Log summary with cache statistics
         reporter = DetailedStatisticsReporter(
             self.statistics, self.current_workers, self.original_max_workers,
             self.worker_reduction_active, self.consecutive_429s
         )
         reporter.log_summary("Series details", elapsed)
+
+        # Additional logging for cache verification with safe access
+        logging.info("Series details cache verification:")
+        if download_results:
+            successful_downloads = len([r for r in download_results.values() if r.success])
+            logging.info("  Downloaded and cached: %d series", successful_downloads)
+        else:
+            logging.info("  Downloaded and cached: 0 series (all from cache)")
+        logging.info("  From cache: %d series", len(series_list) - len(download_tasks))
+        logging.info("  Total available: %d series", len(results))
 
         return results
 
@@ -396,7 +501,16 @@ class ParallelDownloadManager(MonitoringMixin):
             self.statistics, self.current_workers, self.original_max_workers,
             self.worker_reduction_active, self.consecutive_429s
         )
-        return reporter.get_detailed_statistics()
+        base_stats = reporter.get_detailed_statistics()
+
+        # Add rate controller statistics if available
+        if self.rate_controller:
+            rate_stats = self.rate_controller.get_comprehensive_stats()
+            base_stats.update({
+                'rate_controller': rate_stats
+            })
+
+        return base_stats
 
     def reset_statistics(self):
         """Reset statistics for new batch"""
