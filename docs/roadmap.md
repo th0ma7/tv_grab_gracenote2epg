@@ -1,6 +1,4 @@
-# gracenote2epg Enhancement TODO
-
-## VERSION ROADMAP
+# gracenote2epg ROADMAP
 
 ### Version 2.0 🚀 (Performance & Structure Foundation)
 **Focus:** Core performance improvements and code maintainability  
@@ -8,7 +6,7 @@
 
 **Priority Features:**
 1. **Parallel Series Downloads** ⭐ - Major performance improvement (3-5x faster)
-   - **Status:** 🚧 In Progress - [Pull Request #2](https://github.com/th0ma7/gracenote2epg/pull/2)
+   - **Status:** 🚧 In Progress - [Github PR #2](https://github.com/th0ma7/gracenote2epg/pull/2)
 2. **Split Large Modules** ⭐ - Refactor args.py (800+ lines) & config.py (1000+ lines)
    - Break into logical sub-modules for better maintainability
    - Improve testing capabilities
