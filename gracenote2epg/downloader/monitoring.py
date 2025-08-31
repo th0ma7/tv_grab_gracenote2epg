@@ -470,10 +470,6 @@ class EventDrivenMonitor:
                         else:
                             print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
 
-        # Performance summary (simplified)
-        if stats_copy.requests_per_second > 0 and any(w.is_busy for w in workers_copy.values()):
-            print(f"\nCurrent: {stats_copy.requests_per_second:.1f} req/s, {stats_copy.avg_response_time:.2f}s avg")
-
         # Alerts
         alerts = []
         if stats_copy.waf_blocks > 0:

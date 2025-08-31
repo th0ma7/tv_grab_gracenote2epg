@@ -412,24 +412,41 @@ class ParallelDownloadManager(MonitoringMixin):
         for series_id in series_list:
             cached_details = cache_manager.load_series_details(series_id)
 
-            if cached_details:
-                results[series_id] = cached_details
-                self.statistics.record_cached()
-                logging.debug("Using cached series details: %s", series_id)
+            # Check if cached details are valid and not empty
+            if cached_details and isinstance(cached_details, dict) and len(cached_details) > 0:
+                # Additional validation - check for essential keys
+                if any(key in cached_details for key in ['seriesDescription', 'seriesGenres', 'overviewTab', 'upcomingEpisodeTab']):
+                    results[series_id] = cached_details
+                    self.statistics.record_cached()
+                    logging.debug("Using cached series details: %s", series_id)
+                else:
+                    logging.debug("Cached series %s exists but is empty/invalid, will re-download", series_id)
+                    data = f"programSeriesID={series_id}"
+                    download_task = create_series_task(series_id, data)
+                    download_tasks.append(download_task)
             else:
+                logging.debug("No valid cache for series %s, will download", series_id)
                 data = f"programSeriesID={series_id}"
                 download_task = create_series_task(series_id, data)
                 download_tasks.append(download_task)
 
-        # Execute downloads with conservative worker count for series
+        # Execute downloads using all available workers with conservative rate limiting
         if download_tasks:
-            effective_workers = min(self.current_workers, 2)
-            original_workers = self.worker_pool.current_workers
-            self.worker_pool.current_workers = effective_workers
-
             download_count = len(download_tasks)
-            logging.info("Executing %d series downloads with %d workers",
-                        download_count, effective_workers)
+
+            # For series downloads, apply more conservative rate limiting
+            if self.rate_controller:
+                # Temporarily reduce rate for series downloads
+                original_rate = self.rate_controller.rate_limiter.max_requests_per_second
+                conservative_rate = min(original_rate, 2.0)  # Max 2 req/s for series
+                self.rate_controller.rate_limiter.max_requests_per_second = conservative_rate
+                self.rate_controller.rate_limiter.min_interval = 1.0 / conservative_rate
+                logging.info("Series downloads: using conservative rate limiting (%.1f req/s)", conservative_rate)
+
+            # Use all available workers but with conservative rate limiting
+            actual_workers = self.current_workers
+            logging.info("Executing %d series downloads with %d workers (conservative rate limiting)",
+                        download_count, actual_workers)
 
             # Create simple pass-through callback
             simple_callback = SimpleProgressCallback(
@@ -443,8 +460,11 @@ class ParallelDownloadManager(MonitoringMixin):
                 progress_callback=simple_callback
             )
 
-            # Restore original worker count
-            self.worker_pool.current_workers = original_workers
+            # Restore original rate limiting
+            if self.rate_controller:
+                self.rate_controller.rate_limiter.max_requests_per_second = original_rate
+                self.rate_controller.rate_limiter.min_interval = 1.0 / original_rate
+                logging.info("Series downloads: restored original rate limiting (%.1f req/s)", original_rate)
 
             # Process results with explicit cache saving
             for task_id, result in download_results.items():
