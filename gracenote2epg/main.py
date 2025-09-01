@@ -2,19 +2,21 @@
 """
 gracenote2epg - North America TV Guide Grabber
 
-Single manager architecture version to eliminate duplicate initialization messages.
+Unified architecture implementation with strategy-based downloads and clean API.
+Eliminates worker count inconsistencies and provides optimal performance.
 """
 
 import logging
 import sys
 import time
+import threading
 from pathlib import Path
 
 # Import the unified download system
 from .args import ArgumentParser
 from .config import ConfigManager
 from .downloader import create_download_system, get_performance_config, OptimizedDownloader
-from .parser.guide import UnifiedGuideParser as GuideParser
+from .parser.guide import UnifiedGuideParser
 from .tvheadend import TvheadendClient
 from .utils import CacheManager
 from .xmltv import XmltvGenerator
@@ -64,15 +66,16 @@ def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
     return file_handler
 
 
-def get_parallel_config(args) -> dict:
-    """Get parallel download configuration from arguments and environment"""
+def get_unified_config(args) -> dict:
+    """Get unified download configuration with strategy-based settings"""
     import os
 
     # Get base configuration from arguments
     base_config = {
         'enabled': getattr(args, 'parallel_enabled', True),
         'max_workers': getattr(args, 'workers', None),
-        'adaptive': getattr(args, 'adaptive_enabled', True),  # Default to True
+        'worker_strategy': getattr(args, 'worker_strategy', None),
+        'enable_adaptive': getattr(args, 'adaptive_enabled', True),
         'rate_limit': getattr(args, 'rate_limit', None),
         'enable_monitoring': False,
         'enable_web_api': False,
@@ -86,8 +89,13 @@ def get_parallel_config(args) -> dict:
     if os.environ.get('GRACENOTE_MAX_WORKERS'):
         base_config['max_workers'] = int(os.environ.get('GRACENOTE_MAX_WORKERS', '4'))
 
+    if os.environ.get('GRACENOTE_WORKER_STRATEGY'):
+        strategy = os.environ.get('GRACENOTE_WORKER_STRATEGY', 'balanced')
+        if strategy in ['conservative', 'balanced', 'aggressive']:
+            base_config['worker_strategy'] = strategy
+
     if os.environ.get('GRACENOTE_ADAPTIVE'):
-        base_config['adaptive'] = os.environ.get('GRACENOTE_ADAPTIVE', 'true').lower() == 'true'
+        base_config['enable_adaptive'] = os.environ.get('GRACENOTE_ADAPTIVE', 'true').lower() == 'true'
 
     # Enhanced monitoring configuration from environment
     if os.environ.get('GRACENOTE_ENABLE_MONITORING'):
@@ -103,20 +111,23 @@ def get_parallel_config(args) -> dict:
             logging.warning("Invalid GRACENOTE_MONITORING_PORT, using default 9989")
             base_config['monitoring_port'] = 9989
 
-    # Get optimized performance config if max_workers not set
-    if base_config['max_workers'] is None:
+    # Get optimized performance config if values not set
+    if base_config['max_workers'] is None or base_config['worker_strategy'] is None:
         perf_config = get_performance_config()
-        # Ensure we don't fall into sequential mode unless explicitly requested
-        if perf_config.get('max_workers', 1) == 1 and base_config.get('enabled', True):
-            # Override single worker default with adaptive mode
-            perf_config['max_workers'] = 4  # Reasonable default
-            logging.debug("Overriding single worker default with adaptive mode (4 workers)")
-        base_config.update(perf_config)
 
-    # Force sequential mode if disabled
+        if base_config['max_workers'] is None:
+            base_config['max_workers'] = perf_config.get('max_workers', 4)
+
+        if base_config['worker_strategy'] is None:
+            # Determine strategy based on worker count
+            from .downloader.parallel import get_recommended_strategy
+            base_config['worker_strategy'] = get_recommended_strategy(base_config['max_workers'])
+
+    # Force sequential adjustments
     if not base_config['enabled']:
         base_config['max_workers'] = 1
-        base_config['adaptive'] = False
+        base_config['worker_strategy'] = 'conservative'
+        base_config['enable_adaptive'] = False
         base_config['enable_monitoring'] = False
         base_config['enable_web_api'] = False
 
@@ -127,6 +138,10 @@ def get_parallel_config(args) -> dict:
         base_config['max_workers'] = 10
         logging.warning("Max workers limited to 10 to avoid server overload")
 
+    # Disable adaptive for single worker
+    if base_config['max_workers'] == 1:
+        base_config['enable_adaptive'] = False
+
     # Validate monitoring port
     if base_config['monitoring_port'] < 1024 or base_config['monitoring_port'] > 65535:
         logging.warning("Invalid monitoring port %d, using default 9989", base_config['monitoring_port'])
@@ -135,53 +150,13 @@ def get_parallel_config(args) -> dict:
     return base_config
 
 
-def create_unified_download_system(parallel_config: dict):
-    """Create unified download system with single manager architecture"""
-    from .downloader.base import OptimizedDownloader
-    from .downloader.parallel import ParallelDownloadManager
-    from .downloader.monitoring import EventDrivenMonitor
-
-    # Create base downloader
-    base_downloader = OptimizedDownloader(
-        base_delay=parallel_config.get('base_delay', 0.8),
-        min_delay=parallel_config.get('min_delay', 0.4)
-    )
-
-    # Create monitor if requested
-    monitor = None
-    if parallel_config.get('enable_monitoring', False):
-        monitor = EventDrivenMonitor(
-            enable_console=parallel_config.get('enable_console', True),
-            enable_web_api=parallel_config.get('enable_web_api', False),
-            web_port=parallel_config.get('monitoring_port', 9989),
-            metrics_file=parallel_config.get('metrics_file', None)
-        )
-
-    # Create managers with single initialization message
-    guide_manager = ParallelDownloadManager(
-        max_workers=parallel_config['max_workers'],
-        max_retries=3,
-        base_delay=0.5,
-        enable_rate_limiting=True,
-        monitor=monitor,
-        log_initialization=True  # Only the first one logs
-    )
-
-    series_manager = ParallelDownloadManager(
-        max_workers=parallel_config['max_workers'],
-        max_retries=3,
-        base_delay=0.5,
-        enable_rate_limiting=True,
-        monitor=monitor,
-        log_initialization=False  # Suppress duplicate message
-    )
-
-    return base_downloader, guide_manager, series_manager, monitor
-
-
 def main():
-    """Main application entry point with single manager architecture"""
+    """Main application entry point with unified strategy-based architecture"""
     python_start_time = time.time()
+    monitor = None  # Track monitor instance to ensure single cleanup
+    xmltv_progress_thread = None  # Track XMLTV progress thread
+    xmltv_stop_event = threading.Event()  # Event to stop XMLTV progress thread
+    keyboard_interrupt = False  # Track if KeyboardInterrupt occurred
 
     try:
         # Parse command line arguments
@@ -264,28 +239,27 @@ def main():
         logging.info("=" * 60)
         logging.info("gracenote2epg session started - Version %s", __version__)
 
-        # Get enhanced parallel download configuration
-        parallel_config = get_parallel_config(args)
+        # Get unified download configuration with strategy-based settings
+        unified_config = get_unified_config(args)
 
-        # Log performance configuration
-        logging.info("Performance Configuration:")
-        if parallel_config['max_workers'] == 1:
+        # Log unified performance configuration
+        logging.info("Unified Performance Configuration:")
+        if unified_config['max_workers'] == 1:
             logging.info("  Mode: SEQUENTIAL (1 worker)")
-            if parallel_config.get('enabled', True):
-                logging.info("  Note: Using unified architecture in sequential mode")
         else:
-            logging.info("  Mode: PARALLEL (%d workers)", parallel_config['max_workers'])
-            logging.info("  Adaptive concurrency: %s",
-                        "enabled" if parallel_config.get('adaptive', True) else "disabled")
+            logging.info("  Mode: PARALLEL (%d workers)", unified_config['max_workers'])
+            logging.info("  Worker strategy: %s", unified_config['worker_strategy'])
+            logging.info("  Adaptive behavior: %s",
+                        "enabled" if unified_config.get('enable_adaptive', True) else "disabled")
 
-        if parallel_config.get('rate_limit'):
-            logging.info("  Rate limiting: %.1f requests/second", parallel_config['rate_limit'])
+        if unified_config.get('rate_limit'):
+            logging.info("  Rate limiting: %.1f requests/second", unified_config['rate_limit'])
 
         # Enhanced monitoring configuration
-        if parallel_config.get('enable_monitoring', False):
+        if unified_config.get('enable_monitoring', False):
             logging.info("  Real-time monitoring: ENABLED")
-            if parallel_config.get('enable_web_api', False):
-                monitoring_port = parallel_config.get('monitoring_port', 9989)
+            if unified_config.get('enable_web_api', False):
+                monitoring_port = unified_config.get('monitoring_port', 9989)
                 logging.info("  Monitoring API: http://localhost:%d/stats", monitoring_port)
             else:
                 logging.info("  Monitoring: console only")
@@ -372,35 +346,47 @@ def main():
             grid_time_start, final_days, xmltv_file, xmltv_retention_days
         )
 
-        # Create unified download system with single manager architecture
-        base_downloader, guide_manager, series_manager, monitor = create_unified_download_system(parallel_config)
+        # Create unified download system with strategy-based architecture
+        base_downloader, download_manager, monitor = create_download_system(
+            max_workers=unified_config['max_workers'],
+            worker_strategy=unified_config['worker_strategy'],
+            enable_adaptive=unified_config['enable_adaptive'],
+            enable_monitoring=unified_config.get('enable_monitoring', False),
+            monitoring_config={
+                'enable_console': unified_config.get('enable_console', True),
+                'enable_web_api': unified_config.get('enable_web_api', False),
+                'web_port': unified_config.get('monitoring_port', 9989)
+            }
+        )
 
         # Start monitoring if enabled
+        monitoring_started = False
         if monitor:
             try:
                 monitor.start()
-                if parallel_config.get('enable_web_api', False):
-                    monitoring_port = parallel_config.get('monitoring_port', 9989)
+                monitoring_started = True
+                if unified_config.get('enable_web_api', False):
+                    monitoring_port = unified_config.get('monitoring_port', 9989)
                     logging.info("Real-time monitoring started - API available at http://localhost:%d/stats", monitoring_port)
                 else:
                     logging.info("Real-time monitoring started (console mode)")
             except Exception as e:
                 logging.warning("Failed to start monitoring: %s", str(e))
                 monitor = None
+                monitoring_started = False
 
         try:
-            # Create unified guide parser with pre-created managers (eliminates duplicate messages)
-            guide_parser = GuideParser(
+            # Create unified guide parser with single download manager
+            guide_parser = UnifiedGuideParser(
                 cache_manager=cache_manager,
                 base_downloader=base_downloader,
                 tvh_client=tvh_client,
-                max_workers=parallel_config['max_workers'],
-                enable_adaptive=parallel_config.get('adaptive', True),
-                enable_monitoring=parallel_config.get('enable_monitoring', False),
-                monitoring_config=parallel_config,
-                # Pass pre-created managers to prevent duplication
-                guide_manager=guide_manager,
-                series_manager=series_manager,
+                max_workers=unified_config['max_workers'],
+                worker_strategy=unified_config['worker_strategy'],
+                enable_adaptive=unified_config['enable_adaptive'],
+                enable_monitoring=unified_config.get('enable_monitoring', False),
+                monitoring_config=unified_config,
+                download_manager=download_manager,  # Use single unified manager
                 monitor=monitor
             )
 
@@ -436,78 +422,70 @@ def main():
                         "Extended details download had issues, using basic descriptions"
                     )
 
-            # Generate XMLTV with progress tracking
+            # Generate XMLTV with detailed progress tracking
             xmltv_start = time.time()
             xmltv_generator = XmltvGenerator(cache_manager)
 
-            # Create XML generation progress tracker if monitoring enabled
-            xml_progress_tracker = None
+            # Calculate total episodes
+            total_episodes = sum(
+                len([ep for ep in station.keys() if not ep.startswith("ch")])
+                for station in guide_parser.schedule.values()
+            )
+
+            # Track different stages
             if monitor:
-                # Estimate number of items to process for XML generation
+                # Stage 1: Language cache loading
+                cache_tracker = monitor.create_progress_tracker("Loading Language Cache", 100)
+                cache_tracker.update(0)
+
+                # Create thread to simulate cache loading progress
+                cache_stop = threading.Event()
+                def update_cache_progress():
+                    for i in range(1, 101, 10):
+                        if cache_stop.is_set():
+                            break
+                        cache_tracker.update(i)
+                        time.sleep(0.1)
+
+                cache_thread = threading.Thread(target=update_cache_progress, daemon=True)
+                cache_thread.start()
+
+            # Generate XMLTV
+            xmltv_start = time.time()
+            xmltv_generator = XmltvGenerator(cache_manager)
+
+            # Create simple progress tracker if monitoring enabled
+            if monitor:
+                # Calculate total episodes
                 total_episodes = sum(
                     len([ep for ep in station.keys() if not ep.startswith("ch")])
                     for station in guide_parser.schedule.values()
                 )
-                xml_progress_tracker = monitor.create_progress_tracker("Generating XMLTV", total_episodes)
 
-                # Start XML generation progress at 0
+                # Create a single "Generating XMLTV" progress bar
+                xml_progress_tracker = monitor.create_progress_tracker("Generating XMLTV", total_episodes)
                 xml_progress_tracker.update(0)
                 logging.info("Starting XMLTV generation for %d episodes", total_episodes)
 
-            # Generate XMLTV - simulate progress updates since XmltvGenerator doesn't support callbacks
-            import threading
-
-            def simulate_xmltv_progress():
-                """Simulate gradual progress for XMLTV generation"""
-                if not xml_progress_tracker:
-                    return
-
-                total_episodes = sum(
-                    len([ep for ep in station.keys() if not ep.startswith("ch")])
-                    for station in guide_parser.schedule.values()
-                )
-
-                # Simulate progress over estimated time (roughly proportional to episode count)
-                estimated_time = max(2, total_episodes / 1000)  # Rough estimate: 1000 episodes/second
-                intervals = 20  # Update 20 times during generation
-                sleep_time = estimated_time / intervals
-
-                for i in range(1, intervals):
-                    time.sleep(sleep_time)
-                    progress = int((i / intervals) * total_episodes)
-                    xml_progress_tracker.update(progress)
-
-                    # Log intermediate progress
-                    if i % 5 == 0:  # Every 5 intervals
-                        percent = (i / intervals) * 100
-                        logging.info("XMLTV generation progress: %.0f%% (%d/%d episodes)",
-                                   percent, progress, total_episodes)
-
-            # Start progress simulation in background
-            if xml_progress_tracker:
-                progress_thread = threading.Thread(target=simulate_xmltv_progress, daemon=True)
-                progress_thread.start()
-
-            # Generate XMLTV without progress callback (not supported by XmltvGenerator)
+            # Generate XMLTV (includes all steps internally)
             xmltv_success = xmltv_generator.generate_xmltv(
                 schedule=guide_parser.schedule,
                 config=config,
                 xmltv_file=xmltv_file
             )
 
-            # Complete progress tracker
-            if xml_progress_tracker:
-                total_episodes = sum(
-                    len([ep for ep in station.keys() if not ep.startswith("ch")])
-                    for station in guide_parser.schedule.values()
-                )
+            # Update progress to complete if monitoring
+            if monitor and 'xml_progress_tracker' in locals():
                 xml_progress_tracker.update(total_episodes)
-                logging.info("XMLTV generation completed: %d episodes processed", total_episodes)
+                time.sleep(0.5)  # Allow display to update
 
             xmltv_generation_time = time.time() - xmltv_start
 
             if not xmltv_success:
                 logging.error("XMLTV generation failed")
+                # Clean up before returning
+                if 'guide_parser' in locals():
+                    guide_parser.cleanup()
                 return 1
 
             # Final cleanup
@@ -519,7 +497,16 @@ def main():
                     len(final_active_series),
                 )
 
-            # Performance statistics
+            # Stop monitoring before statistics output
+            if monitor and monitoring_started:
+                try:
+                    monitor.stop()
+                    monitoring_started = False
+                    logging.info("Real-time monitoring stopped")
+                except Exception as e:
+                    logging.warning("Error stopping monitoring: %s", str(e))
+
+            # Performance statistics with unified strategy reporting
             total_time = time.time() - python_start_time
 
             logging.info("=" * 60)
@@ -538,16 +525,27 @@ def main():
                         xmltv_generation_time,
                         (xmltv_generation_time / total_time * 100))
 
-            # Performance comparison and statistics
+            # Unified network statistics
             stats = guide_parser.get_statistics()
 
             logging.info("=" * 60)
-            logging.info("NETWORK STATISTICS:")
+            logging.info("UNIFIED NETWORK STATISTICS:")
+            logging.info("  Architecture: Strategy-based unified download system")
+            logging.info("  Worker strategy: %s", unified_config['worker_strategy'])
 
-            mode_description = "sequential" if parallel_config['max_workers'] == 1 else "parallel"
-            logging.info("  Download mode: %s (%d workers)",
-                        mode_description, parallel_config['max_workers'])
+            # Worker pool statistics with verification
+            active_pools = stats.get('active_pools', {})
+            total_workers = 0
+            for task_type, pool_info in active_pools.items():
+                pool_stats = pool_info.get('statistics', {})
+                current_workers = pool_info.get('current_workers', 0)
+                max_workers = pool_info.get('max_workers', 0)
+                total_workers += current_workers
 
+                consistency_mark = "✓" if pool_stats.get('worker_count_consistent', True) else "✗"
+                logging.info("  %s: %d/%d workers %s", task_type, current_workers, max_workers, consistency_mark)
+
+            logging.info("  Total active workers: %d", total_workers)
             logging.info("  Total requests: %d", stats.get('total_requests', 0))
             logging.info("  Successful downloads: %d", stats.get('successful', 0))
             logging.info("  Failed downloads: %d", stats.get('failed', 0))
@@ -570,24 +568,45 @@ def main():
             if throughput > 0:
                 logging.info("  Throughput: %.2f MB/s", throughput)
 
-            # Performance comparison for parallel mode
-            if parallel_config['max_workers'] > 1:
-                # Estimate sequential time (rough approximation)
-                estimated_sequential = total_time * (parallel_config['max_workers'] * 0.6)
-                speedup = estimated_sequential / total_time
+            # Adaptive strategy performance summary
+            if unified_config.get('enable_adaptive', False):
+                strategy_stats = stats.get('adaptive_strategy', {})
+                if strategy_stats.get('status') == 'active':
+                    logging.info("=" * 60)
+                    logging.info("ADAPTIVE STRATEGY PERFORMANCE:")
 
-                if speedup > 1.2:
-                    logging.info("  Estimated speedup: %.1fx faster than sequential", speedup)
+                    for task_type, task_summary in strategy_stats.get('task_summaries', {}).items():
+                        if task_summary.get('samples', 0) > 0:
+                            logging.info("  %s:", task_type)
+                            logging.info("    Success rate: %.1f%%", task_summary['avg_success_rate'] * 100)
+                            logging.info("    Avg response time: %.2fs", task_summary['avg_response_time'])
+                            logging.info("    Performance trend: %s", task_summary['performance_trend'])
+                            logging.info("    Final workers: %d/%d",
+                                       task_summary['current_workers'], task_summary['max_workers'])
 
-            # WAF blocks
+            # WAF and rate limiting summary
             total_waf = stats.get('waf_blocks', 0)
-            if total_waf > 0:
-                logging.info("  WAF blocks encountered: %d", total_waf)
+            total_rate_limits = stats.get('rate_limit_hits', 0)
+
+            if total_waf > 0 or total_rate_limits > 0:
+                logging.info("=" * 60)
+                logging.info("RATE LIMITING & WAF SUMMARY:")
+                if total_waf > 0:
+                    logging.info("  WAF blocks encountered: %d", total_waf)
+                if total_rate_limits > 0:
+                    logging.info("  Rate limit hits: %d", total_rate_limits)
+
+                # Rate controller final state
+                rate_stats = stats.get('rate_controller', {})
+                if rate_stats:
+                    logging.info("  Final rate: %.1f req/s", rate_stats.get('current_rate', 0))
+                    if rate_stats.get('worker_reduction_active', False):
+                        logging.info("  Worker reduction: active")
 
             # Enhanced monitoring summary
-            if monitor and parallel_config.get('enable_monitoring', False):
+            if monitor and unified_config.get('enable_monitoring', False):
                 logging.info("=" * 60)
-                logging.info("ENHANCED MONITORING SUMMARY:")
+                logging.info("REAL-TIME MONITORING SUMMARY:")
 
                 try:
                     final_stats = monitor.get_statistics()
@@ -595,22 +614,29 @@ def main():
                         realtime_stats = final_stats.get('stats', {})
                         workers_stats = final_stats.get('workers', {})
 
-                        logging.info("  Real-time metrics collected: %d events",
-                                    final_stats.get('recent_events_count', 0))
-                        logging.info("  Active workers tracked: %d", len(workers_stats))
+                        logging.info("  Events tracked: %d", final_stats.get('recent_events_count', 0))
+                        logging.info("  Workers monitored: %d", len(workers_stats))
 
-                        if realtime_stats.get('waf_blocks', 0) > 0:
-                            logging.info("  WAF events detected: %d", realtime_stats['waf_blocks'])
+                        # Detailed worker performance
+                        for worker_id, worker_info in sorted(workers_stats.items()):
+                            if isinstance(worker_info, dict) and worker_info.get('total_tasks', 0) > 0:
+                                logging.info("    Worker %d: %d tasks, %.1f%% success",
+                                           worker_id, worker_info['total_tasks'], worker_info.get('success_rate', 0))
 
-                        if realtime_stats.get('rate_limits', 0) > 0:
-                            logging.info("  Rate limit events: %d", realtime_stats['rate_limits'])
-
-                        if parallel_config.get('enable_web_api', False):
-                            monitoring_port = parallel_config.get('monitoring_port', 9989)
+                        if unified_config.get('enable_web_api', False):
+                            monitoring_port = unified_config.get('monitoring_port', 9989)
                             logging.info("  API access: http://localhost:%d/stats", monitoring_port)
 
                 except Exception as e:
                     logging.debug("Error getting monitoring summary: %s", str(e))
+
+            # Performance recommendations
+            recommendations = guide_parser.get_performance_recommendations()
+            if recommendations:
+                logging.info("=" * 60)
+                logging.info("PERFORMANCE RECOMMENDATIONS:")
+                for rec in recommendations:
+                    logging.info("  • %s", rec)
 
             logging.info("=" * 60)
 
@@ -623,18 +649,28 @@ def main():
             # Clean up download system
             guide_parser.cleanup()
 
-        finally:
-            # Stop monitoring if enabled
-            if monitor:
-                try:
-                    monitor.stop()
-                    logging.info("Real-time monitoring stopped")
-                except Exception as e:
-                    logging.warning("Error stopping monitoring: %s", str(e))
+        except KeyboardInterrupt:
+            keyboard_interrupt = True
+            logging.info("KeyboardInterrupt received - shutting down gracefully...")
 
-            # Close download system
-            if base_downloader:
-                base_downloader.close()
+            # Stop XMLTV progress thread immediately if running
+            if xmltv_progress_thread and xmltv_progress_thread.is_alive():
+                xmltv_stop_event.set()
+                xmltv_progress_thread.join(timeout=1)
+
+            # Cleanup guide parser if it exists
+            if 'guide_parser' in locals():
+                try:
+                    guide_parser.cleanup()
+                except:
+                    pass
+
+            # Re-raise to propagate
+            raise
+
+        finally:
+            # Do not stop moniting as already done previously
+            pass
 
         # Output XMLTV to stdout if not redirected to file
         if args.output is None:
@@ -653,10 +689,23 @@ def main():
         return 0
 
     except KeyboardInterrupt:
-        logging.info("Interrupted by user")
+        if not keyboard_interrupt:  # First KeyboardInterrupt
+            logging.info("Interrupted by user")
+        # Stop monitoring if it was started
+        if monitor and 'monitoring_started' in locals() and monitoring_started:
+            try:
+                monitor.stop()
+            except:
+                pass
         return 1
     except Exception as e:
         logging.exception("Critical error: %s", str(e))
+        # Stop monitoring if it was started
+        if monitor and 'monitoring_started' in locals() and monitoring_started:
+            try:
+                monitor.stop()
+            except:
+                pass
         logging.info("gracenote2epg session ended with error")
         logging.info("=" * 60)
         return 1

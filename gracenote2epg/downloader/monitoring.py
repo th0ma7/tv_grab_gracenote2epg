@@ -136,13 +136,23 @@ class EventDrivenMonitor:
         # Named progress bars
         self.progress_bars: Dict[str, Dict] = {}
 
+        # State tracking to prevent multiple stop calls
+        self._is_running = False
+        self._stop_lock = threading.Lock()
+
         logging.info("Event-driven monitor initialized (console: %s, web: %s, port: %d)",
                     enable_console, enable_web_api, web_port)
 
     def start(self):
         """Start monitoring"""
-        self.stats.start_time = time.time()
-        self.stop_event.clear()
+        with self._stop_lock:
+            if self._is_running:
+                logging.debug("Monitor already running, skipping start")
+                return
+
+            self.stats.start_time = time.time()
+            self.stop_event.clear()
+            self._is_running = True
 
         # Event processing thread
         self.event_processor = threading.Thread(
@@ -169,13 +179,19 @@ class EventDrivenMonitor:
 
     def stop(self):
         """Stop monitoring"""
-        self.stop_event.set()
+        with self._stop_lock:
+            if not self._is_running:
+                logging.debug("Monitor already stopped, skipping stop")
+                return
+
+            self._is_running = False
+            self.stop_event.set()
 
         # Wait for threads to finish
-        if self.event_processor:
+        if self.event_processor and self.event_processor.is_alive():
             self.event_processor.join(timeout=2)
 
-        if self.console_updater:
+        if self.console_updater and self.console_updater.is_alive():
             self.console_updater.join(timeout=1)
 
         if self.web_server:
@@ -198,6 +214,9 @@ class EventDrivenMonitor:
             task_id: Task ID (optional)
             **data: Additional data
         """
+        if not self._is_running:
+            return
+
         event = MonitoringEvent(
             event_type=event_type,
             timestamp=time.time(),
@@ -221,6 +240,7 @@ class EventDrivenMonitor:
             self.progress_bars[name] = {
                 'total': total,
                 'completed': 0,
+                'cached': 0,
                 'start_time': time.time()
             }
 
@@ -372,7 +392,7 @@ class EventDrivenMonitor:
                 logging.error("Error updating console: %s", e)
 
     def _render_console(self):
-        """Render optimized console display with improved alignment"""
+        """Render optimized console display with improved progress bars"""
         with self.stats_lock:
             stats_copy = RealTimeStats(**asdict(self.stats))
             # Only include valid workers (ID > 0) and sort them properly
@@ -388,10 +408,10 @@ class EventDrivenMonitor:
 
         # Header
         print("=" * 80)
-        print("GRACENOTE2EPG - REAL-TIME MONITOR")
+        print("GRACENOTE2EPG")
         print("=" * 80)
 
-        # Workers status with actual count (only show valid workers)
+        # Workers status with actual count
         if workers_copy:
             active_count = sum(1 for w in workers_copy.values() if w.is_busy)
             total_workers = len(workers_copy)
@@ -406,13 +426,13 @@ class EventDrivenMonitor:
                 else:
                     print(f"  Worker {worker.worker_id}: idle ({worker.tasks_completed} completed)")
 
-        # Progress bars with improved alignment and chronological order
+        # Progress bars with improved display
         if progress_copy:
             print()  # Add spacing before progress bars
 
             # Calculate maximum name width for alignment
             max_name_width = max(len(name) for name in progress_copy.keys()) if progress_copy else 0
-            max_name_width = max(max_name_width, 16)  # Minimum width for readability
+            max_name_width = max(max_name_width, 20)  # Minimum width for readability
 
             # Define chronological order for progress bars
             progress_order = [
@@ -430,24 +450,58 @@ class EventDrivenMonitor:
                     displayed_names.add(ordered_name)
                     name = ordered_name
                     progress = progress_copy[name]
-                    total = progress['total']
-                    completed = progress['completed']
 
-                    # Get cache info if available
+                    # Extract information
+                    total = progress.get('total', 0)
+                    completed = progress.get('completed', 0)
                     cached = progress.get('cached', 0)
+                    cache_only = progress.get('cache_only', False)
+                    has_downloads = progress.get('has_downloads', True)
 
-                    if total > 0:
-                        pct = (completed / total) * 100
-                        bar_width = 30
-                        filled = int(bar_width * completed / total)
-                        bar = '█' * filled + '░' * (bar_width - filled)
+                    name_padded = name.ljust(max_name_width)
 
-                        # Enhanced formatting with cache info
-                        name_padded = name.ljust(max_name_width)
-                        if cached > 0:
-                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total}, {cached} cached)")
+                    # Special handling for different task types
+                    if "Downloading" in name:
+                        if cache_only:
+                            # Everything is cached - show full bar with cache count only
+                            bar_width = 30
+                            bar = '█' * bar_width
+                            print(f"  {name_padded}: |{bar}| 100.0% ({cached}/{cached} cached)")
+                        elif has_downloads:
+                            # Show actual download progress
+                            if total > 0:
+                                pct = min(100.0, (completed / total) * 100)
+                                bar_width = 30
+                                filled = int(bar_width * pct / 100)
+                                bar = '█' * filled + '░' * (bar_width - filled)
+
+                                if cached > 0:
+                                    total_items = progress.get('total_blocks', 0) or progress.get('total_series', 0) or (total + cached)
+                                    print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total}, {cached}/{total_items} cached)")
+                                else:
+                                    print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+                            else:
+                                # No total set yet
+                                bar_width = 30
+                                bar = '░' * bar_width
+                                print(f"  {name_padded}: |{bar}| 0.0% (0/0)")
                         else:
+                            # Fallback
+                            if total > 0:
+                                pct = min(100.0, (completed / total) * 100)
+                                bar_width = 30
+                                filled = int(bar_width * pct / 100)
+                                bar = '█' * filled + '░' * (bar_width - filled)
+                                print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+                    else:
+                        # For non-download tasks (parsing, processing, generating)
+                        if total > 0:
+                            pct = min(100.0, (completed / total) * 100)
+                            bar_width = 30
+                            filled = int(bar_width * pct / 100)
+                            bar = '█' * filled + '░' * (bar_width - filled)
                             print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+
 
             # Display any remaining progress bars not in the predefined order
             for name in sorted(progress_copy.keys()):
@@ -455,20 +509,15 @@ class EventDrivenMonitor:
                     progress = progress_copy[name]
                     total = progress['total']
                     completed = progress['completed']
-                    cached = progress.get('cached', 0)
 
                     if total > 0:
-                        pct = (completed / total) * 100
+                        pct = min(100.0, (completed / total) * 100)
                         bar_width = 30
-                        filled = int(bar_width * completed / total)
+                        filled = int(bar_width * pct / 100)
                         bar = '█' * filled + '░' * (bar_width - filled)
 
-                        # Enhanced formatting with cache info
                         name_padded = name.ljust(max_name_width)
-                        if cached > 0:
-                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total}, {cached} cached)")
-                        else:
-                            print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
+                        print(f"  {name_padded}: |{bar}| {pct:.1f}% ({completed}/{total})")
 
         # Alerts
         alerts = []
@@ -549,10 +598,13 @@ class EventDrivenMonitor:
                     pass
 
             def run_server():
-                server = HTTPServer(('localhost', self.web_port), MonitoringHandler)
-                self.web_server = server
-                logging.info(f"Web monitoring API started on http://localhost:{self.web_port}/stats")
-                server.serve_forever()
+                try:
+                    server = HTTPServer(('localhost', self.web_port), MonitoringHandler)
+                    self.web_server = server
+                    logging.info(f"Web monitoring API started on http://localhost:{self.web_port}/stats")
+                    server.serve_forever()
+                except Exception as e:
+                    logging.warning(f"Web server error: {e}")
 
             web_thread = threading.Thread(target=run_server, daemon=True)
             web_thread.start()
@@ -563,7 +615,11 @@ class EventDrivenMonitor:
     def _stop_web_server(self):
         """Stop web server"""
         if self.web_server:
-            self.web_server.shutdown()
+            try:
+                self.web_server.shutdown()
+                self.web_server = None
+            except Exception as e:
+                logging.debug(f"Error stopping web server: {e}")
 
 
 class ProgressTracker:
