@@ -2,86 +2,28 @@
 """
 gracenote2epg - North America TV Guide Grabber
 
-A modular Python implementation for downloading TV guide data from
-tvlistings.gracenote.com with intelligent caching and TVheadend integration.
-Updated with unified retention policies for logs and XMLTV backups.
+Unified architecture implementation with strategy-based downloads and clean API.
+Eliminates worker count inconsistencies and provides optimal performance.
 """
 
 import logging
 import sys
 import time
+import threading
 from pathlib import Path
 
-# Specific imports
-from .gracenote2epg_args import ArgumentParser
-from .gracenote2epg_config import ConfigManager
-from .gracenote2epg_downloader import OptimizedDownloader
-from .gracenote2epg_parser import GuideParser
-from .gracenote2epg_tvheadend import TvheadendClient
-from .gracenote2epg_utils import CacheManager
-from .gracenote2epg_xmltv import XmltvGenerator
-from .gracenote2epg_logrotate import LogRotationManager
+# Import the unified download system
+from .args import ArgumentParser
+from .config import ConfigManager
+from .downloader import create_download_system, get_performance_config, OptimizedDownloader
+from .parser.guide import UnifiedGuideParser
+from .tvheadend import TvheadendClient
+from .utils import CacheManager
+from .xmltv import XmltvGenerator
+from .logrotate import LogRotationManager
 
 # Package version
 from . import __version__
-
-
-def check_rotation_status(log_file: Path, retention_config: dict):
-    """Check and report any rotation that occurred during startup"""
-    if not retention_config.get("enabled", False):
-        return
-
-    try:
-        log_dir = log_file.parent
-        log_basename = log_file.name
-
-        # Find backup files created recently (last 10 minutes)
-        import time
-
-        recent_cutoff = time.time() - 600  # 10 minutes ago
-        recent_backups = []
-
-        for backup_file in log_dir.glob(f"{log_basename}.*"):
-            if str(backup_file) != str(log_file):
-                try:
-                    if backup_file.stat().st_mtime > recent_cutoff:
-                        recent_backups.append(backup_file)
-                except Exception:
-                    continue
-
-        if recent_backups:
-            logging.info("Log Rotation Report:")
-            logging.info(
-                "  Recent rotation detected - %d backup files created:", len(recent_backups)
-            )
-
-            for backup in sorted(recent_backups):
-                try:
-                    size_mb = backup.stat().st_size / (1024 * 1024)
-                    # Extract period from filename
-                    backup.name.replace(f"{log_basename}.", "")
-                    logging.info(
-                        "    Created backup: %s (%.1f MB) - %s rotation",
-                        backup.name,
-                        size_mb,
-                        retention_config.get("interval", "unknown"),
-                    )
-                except Exception:
-                    logging.info("    Created backup: %s", backup.name)
-
-            current_size_mb = log_file.stat().st_size / (1024 * 1024) if log_file.exists() else 0
-            logging.info(
-                "    Current log: %s (%.1f MB) - contains current %s only",
-                log_basename,
-                current_size_mb,
-                retention_config.get("interval", "period"),
-            )
-            logging.info("  Log rotation completed successfully")
-        else:
-            logging.debug("No recent log rotation detected")
-
-    except Exception as e:
-        logging.debug("Error checking rotation status: %s", str(e))
 
 
 def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
@@ -110,140 +52,182 @@ def setup_logging(logging_config: dict, log_file: Path, retention_config: dict):
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(file_level)
-
-    # Clear any existing handlers and add file handler
     root_logger.handlers.clear()
     root_logger.addHandler(file_handler)
 
     # Console logging only if --console is specified (and not --quiet)
-    # IMPORTANT: Use stderr to avoid polluting XML output on stdout
     if logging_config["console"] and not logging_config["quiet"]:
-        console_handler = logging.StreamHandler(sys.stderr)  # Force stderr for console output
-
-        # Set console level to match file level
+        console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(file_level)
-
         formatter = logging.Formatter("%(levelname)s: %(message)s")
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
-    # Log unified retention status for transparency
-    if retention_config.get("enabled", False):
-        rotation_status = LogRotationManager.get_rotation_status(log_file, retention_config)
-
-        log_retention = retention_config.get("log_retention_days", 30)
-        xmltv_retention = retention_config.get("xmltv_retention_days", 7)
-
-        # Log details about unified retention policy
-        logging.debug("Unified retention policy:")
-        logging.debug(
-            "  Log rotation: %s (%s interval, %d days retention)",
-            "enabled" if retention_config.get("enabled") else "disabled",
-            retention_config.get("interval", "daily"),
-            log_retention,
-        )
-        logging.debug("  XMLTV backups: %d days retention", xmltv_retention)
-        logging.debug(
-            "  Current log size: %d bytes, backup files: %d",
-            rotation_status.get("current_log_size", 0),
-            rotation_status.get("backup_files_count", 0),
-        )
-
-    # Return the file handler so it can be used for manual rotation triggering
     return file_handler
 
 
-def log_command_line_processing(args):
-    """Log command line argument processing for better debugging"""
-    logging.info("Command line arguments processed:")
+def get_unified_config(args) -> dict:
+    """Get unified download configuration with strategy-based settings"""
+    import os
 
-    # Log zipcode processing - only if passed explicitly as argument
-    zipcode_from_extraction = False
-    if hasattr(args, "location_code") and args.location_code:
-        source = getattr(args, "location_source", "unknown")
-        if source == "explicit":
-            # Only log if passed explicitly by user
-            logging.info("  zipcode: %s (explicit)", args.location_code)
-        elif source == "extracted":
-            # Track extraction but don't log - it's not a command line argument
-            zipcode_from_extraction = True
-        # Don't log if source is unknown
+    # Get base configuration from arguments
+    base_config = {
+        'enabled': getattr(args, 'parallel_enabled', True),
+        'max_workers': getattr(args, 'workers', None),
+        'worker_strategy': getattr(args, 'worker_strategy', None),
+        'enable_adaptive': getattr(args, 'adaptive_enabled', True),
+        'rate_limit': getattr(args, 'rate_limit', None),
+        'enable_monitoring': False,
+        'enable_web_api': False,
+        'monitoring_port': 9989,
+    }
 
-    # Log lineupid processing
-    if hasattr(args, "original_lineupid") and args.original_lineupid:
-        if zipcode_from_extraction:
-            # Don't repeat the extraction info since it's already mentioned in zipcode
-            logging.info("  lineupid: %s", args.original_lineupid)
-        else:
-            extracted = getattr(args, "extracted_location", None)
-            if extracted:
-                # Normalize postal code display (remove spaces)
-                normalized_extracted = extracted.replace(" ", "")
-                logging.info(
-                    "  lineupid: %s (contains zipcode %s)",
-                    args.original_lineupid,
-                    normalized_extracted,
-                )
-            else:
-                logging.info("  lineupid: %s", args.original_lineupid)
+    # Override with environment variables if set
+    if os.environ.get('GRACENOTE_PARALLEL'):
+        base_config['enabled'] = os.environ.get('GRACENOTE_PARALLEL', 'true').lower() == 'true'
 
-    # Log other parameters
-    if args.days:
-        logging.info("  days: %d", args.days)
-    if hasattr(args, "refresh_hours") and args.refresh_hours is not None:
-        if args.refresh_hours == 0:
-            logging.info("  refresh: disabled (--norefresh)")
-        else:
-            logging.info("  refresh: %d hours", args.refresh_hours)
-    if args.langdetect is not None:
-        logging.info("  langdetect: %s", args.langdetect)
+    if os.environ.get('GRACENOTE_MAX_WORKERS'):
+        base_config['max_workers'] = int(os.environ.get('GRACENOTE_MAX_WORKERS', '4'))
+
+    if os.environ.get('GRACENOTE_WORKER_STRATEGY'):
+        strategy = os.environ.get('GRACENOTE_WORKER_STRATEGY', 'balanced')
+        if strategy in ['conservative', 'balanced', 'aggressive']:
+            base_config['worker_strategy'] = strategy
+
+    if os.environ.get('GRACENOTE_ADAPTIVE'):
+        base_config['enable_adaptive'] = os.environ.get('GRACENOTE_ADAPTIVE', 'true').lower() == 'true'
+
+    # Enhanced monitoring configuration from environment
+    if os.environ.get('GRACENOTE_ENABLE_MONITORING'):
+        base_config['enable_monitoring'] = os.environ.get('GRACENOTE_ENABLE_MONITORING', 'false').lower() == 'true'
+
+    if os.environ.get('GRACENOTE_MONITORING_WEB_API'):
+        base_config['enable_web_api'] = os.environ.get('GRACENOTE_MONITORING_WEB_API', 'false').lower() == 'true'
+
+    if os.environ.get('GRACENOTE_MONITORING_PORT'):
+        try:
+            base_config['monitoring_port'] = int(os.environ.get('GRACENOTE_MONITORING_PORT', '9989'))
+        except ValueError:
+            logging.warning("Invalid GRACENOTE_MONITORING_PORT, using default 9989")
+            base_config['monitoring_port'] = 9989
+
+    # Get optimized performance config if values not set
+    if base_config['max_workers'] is None or base_config['worker_strategy'] is None:
+        perf_config = get_performance_config()
+
+        if base_config['max_workers'] is None:
+            base_config['max_workers'] = perf_config.get('max_workers', 4)
+
+        if base_config['worker_strategy'] is None:
+            # Determine strategy based on worker count
+            from .downloader.parallel import get_recommended_strategy
+            base_config['worker_strategy'] = get_recommended_strategy(base_config['max_workers'])
+
+    # Force sequential adjustments
+    if not base_config['enabled']:
+        base_config['max_workers'] = 1
+        base_config['worker_strategy'] = 'conservative'
+        base_config['enable_adaptive'] = False
+        base_config['enable_monitoring'] = False
+        base_config['enable_web_api'] = False
+
+    # Validate max_workers
+    if base_config['max_workers'] < 1:
+        base_config['max_workers'] = 1
+    elif base_config['max_workers'] > 10:
+        base_config['max_workers'] = 10
+        logging.warning("Max workers limited to 10 to avoid server overload")
+
+    # Disable adaptive for single worker
+    if base_config['max_workers'] == 1:
+        base_config['enable_adaptive'] = False
+
+    # Validate monitoring port
+    if base_config['monitoring_port'] < 1024 or base_config['monitoring_port'] > 65535:
+        logging.warning("Invalid monitoring port %d, using default 9989", base_config['monitoring_port'])
+        base_config['monitoring_port'] = 9989
+
+    return base_config
 
 
 def main():
-    """Main application entry point"""
+    """Main application entry point with unified strategy-based architecture"""
     python_start_time = time.time()
+    monitor = None  # Track monitor instance to ensure single cleanup
+    xmltv_progress_thread = None  # Track XMLTV progress thread
+    xmltv_stop_event = threading.Event()  # Event to stop XMLTV progress thread
+    keyboard_interrupt = False  # Track if KeyboardInterrupt occurred
 
     try:
         # Parse command line arguments
         arg_parser = ArgumentParser()
         args = arg_parser.parse_args()
 
-        # Get system defaults
-        defaults = arg_parser.get_system_defaults()
+        # Get system defaults with support for custom cache directory
+        defaults = arg_parser.get_system_defaults(
+            cachedir_override=getattr(args, 'cachedir', None)
+        )
 
         # Override defaults with command line arguments
-        args.basedir or defaults["base_dir"]
         config_file = args.config_file or defaults["config_file"]
         xmltv_file = args.output or defaults["xmltv_file"]
         log_file = defaults["log_file"]
 
+        # Use specified cache directory or default
+        cache_dir = getattr(args, 'cachedir', None) or defaults["cache_dir"]
+
+        # Log cache directory usage for transparency
+        if getattr(args, 'cachedir', None):
+            logging.info("Using custom cache directory: %s", cache_dir)
+        else:
+            logging.info("Using default cache directory: %s", cache_dir)
+
         # Ensure directories exist
-        arg_parser = ArgumentParser()
         arg_parser.create_directories_with_proper_permissions()
+
+        # Ensure custom cache directory exists if specified
+        if getattr(args, 'cachedir', None):
+            try:
+                cache_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+                logging.debug("Custom cache directory created/verified: %s", cache_dir)
+            except Exception as e:
+                logging.error("Cannot create custom cache directory %s: %s", cache_dir, e)
+                return 1
 
         # Load and validate configuration
         config_manager = ConfigManager(config_file)
+
+        # Handle duration from --hours or --days
+        if getattr(args, 'duration_days', None) is not None:
+            # Duration specified via command line
+            days = args.duration_days
+            duration_source = args.duration_source
+            duration_hours = args.duration_hours
+        else:
+            # Use configuration default
+            days = None
+            duration_source = None
+            duration_hours = None
+
         config = config_manager.load_config(
             location_code=getattr(args, "location_code", None),
             location_source=getattr(args, "location_source", "explicit"),
             location_extracted_from=getattr(args, "original_lineupid", None),
-            days=args.days,
+            days=int(days) if days and days == int(days) else None,
             langdetect=args.langdetect,
             refresh_hours=getattr(args, "refresh_hours", None),
             lineupid=getattr(args, "original_lineupid", None),
         )
 
-        # Get unified retention configuration (replaces old logrotate_config)
+        # Get unified retention configuration
         retention_config = config_manager.get_retention_config()
 
-        # Setup logging with unified retention policy
+        # Setup logging
         logging_config = arg_parser.get_logging_config(args)
         file_handler = setup_logging(logging_config, log_file, retention_config)
 
-        # FIRST: Check for log rotation (this may truncate/rebuild the log file)
-        if retention_config.get("enabled", False) and hasattr(
-            file_handler, "_check_startup_rotation"
-        ):
+        # Check for log rotation
+        if retention_config.get("enabled", False) and hasattr(file_handler, "_check_startup_rotation"):
             try:
                 logging.info("Checking for startup log rotation...")
                 file_handler._check_startup_rotation()
@@ -251,27 +235,48 @@ def main():
             except Exception as e:
                 logging.warning("Error during startup rotation check: %s", str(e))
 
-        # Report any rotation that occurred (includes its own separator if needed)
-        check_rotation_status(log_file, retention_config)
-
-        # NOW start the normal session logging with consistent separator
+        # Start session logging
         logging.info("=" * 60)
         logging.info("gracenote2epg session started - Version %s", __version__)
+
+        # Get unified download configuration with strategy-based settings
+        unified_config = get_unified_config(args)
+
+        # Log unified performance configuration
+        logging.info("Unified Performance Configuration:")
+        if unified_config['max_workers'] == 1:
+            logging.info("  Mode: SEQUENTIAL (1 worker)")
+        else:
+            logging.info("  Mode: PARALLEL (%d workers)", unified_config['max_workers'])
+            logging.info("  Worker strategy: %s", unified_config['worker_strategy'])
+            logging.info("  Adaptive behavior: %s",
+                        "enabled" if unified_config.get('enable_adaptive', True) else "disabled")
+
+        if unified_config.get('rate_limit'):
+            logging.info("  Rate limiting: %.1f requests/second", unified_config['rate_limit'])
+
+        # Enhanced monitoring configuration
+        if unified_config.get('enable_monitoring', False):
+            logging.info("  Real-time monitoring: ENABLED")
+            if unified_config.get('enable_web_api', False):
+                monitoring_port = unified_config.get('monitoring_port', 9989)
+                logging.info("  Monitoring API: http://localhost:%d/stats", monitoring_port)
+            else:
+                logging.info("  Monitoring: console only")
+        else:
+            logging.info("  Real-time monitoring: disabled")
 
         if logging_config["level"] == "debug":
             logging.info("Debug logging enabled - all debug information will be logged")
         if logging_config["console"]:
             logging.info("Console logging enabled - logs also displayed on stderr")
 
-        # Log command line processing BEFORE config summary
-        log_command_line_processing(args)
-
         # Log configuration summary
         logging.info("Configuration loaded from: %s", config_file)
         config_manager.log_config_summary()
 
-        # Initialize components
-        cache_manager = CacheManager(defaults["cache_dir"])
+        # Initialize components with custom cache directory
+        cache_manager = CacheManager(cache_dir)
 
         # Setup TVheadend client if enabled
         tvh_client = None
@@ -291,23 +296,31 @@ def main():
                     use_tvh_matching=config.get("tvhmatch", False),
                 )
 
-        # Calculate guide parameters
-        days = int(config.get("days", 1))
+        # Calculate guide parameters with duration support
+        if days is not None:
+            # Use command-line specified duration
+            final_days = days
+            if duration_source == "hours":
+                logging.info("TV Guide duration: %d hours (%.1f days)", duration_hours, days)
+            else:
+                logging.info("TV Guide duration: %s days", int(days) if days == int(days) else days)
+        else:
+            # Use configuration default
+            final_days = int(config.get("days", 1))
+            logging.info("TV Guide duration: %s days (from configuration)", final_days)
+
         offset = float(getattr(args, "offset", 0) or 0)
-        day_hours = days * 8  # 8 three-hour blocks per day
+        day_hours = int(final_days * 8)  # 8 three-hour blocks per day
 
         # Get refresh hours from configuration/command line
         refresh_hours = config_manager.get_refresh_hours()
 
         # Calculate start time
         from datetime import datetime
-
         now = datetime.now().replace(microsecond=0, second=0, minute=0)
         grid_time_start = int(time.mktime(now.timetuple())) + int(offset * 86400)
 
-        # Log guide parameters (remove redundant info already shown in config summary)
-        logging.info("TV Guide duration: %s days", days)
-
+        # Log guide parameters
         if offset > 1:
             logging.info("TV Guide Start: %i [offset: %i days]", grid_time_start, int(offset))
         elif offset == 1:
@@ -315,7 +328,7 @@ def main():
         else:
             logging.info("TV Guide Start: %i", grid_time_start)
 
-        logging.info("Caching directory: %s", defaults["cache_dir"])
+        logging.info("Caching directory: %s", cache_dir)
 
         # Log cache refresh configuration
         if refresh_hours == 0:
@@ -327,24 +340,68 @@ def main():
                 refresh_hours,
             )
 
-        # Perform initial cache cleanup with unified retention policy
+        # Perform initial cache cleanup
         xmltv_retention_days = retention_config.get("xmltv_retention_days", 7)
         cache_manager.perform_initial_cleanup(
-            grid_time_start, days, xmltv_file, xmltv_retention_days
+            grid_time_start, final_days, xmltv_file, xmltv_retention_days
         )
 
-        # Download and parse guide data
-        with OptimizedDownloader(base_delay=0.8, min_delay=0.4) as downloader:
-            guide_parser = GuideParser(cache_manager, downloader, tvh_client)
+        # Create unified download system with strategy-based architecture
+        base_downloader, download_manager, monitor = create_download_system(
+            max_workers=unified_config['max_workers'],
+            worker_strategy=unified_config['worker_strategy'],
+            enable_adaptive=unified_config['enable_adaptive'],
+            enable_monitoring=unified_config.get('enable_monitoring', False),
+            monitoring_config={
+                'enable_console': unified_config.get('enable_console', True),
+                'enable_web_api': unified_config.get('enable_web_api', False),
+                'web_port': unified_config.get('monitoring_port', 9989)
+            }
+        )
 
-            # Download guide blocks with configurable refresh
-            # Passes config_manager instead of individual parameters
-            guide_success = guide_parser.optimized_guide_download(
+        # Start monitoring if enabled
+        monitoring_started = False
+        if monitor:
+            try:
+                monitor.start()
+                monitoring_started = True
+                if unified_config.get('enable_web_api', False):
+                    monitoring_port = unified_config.get('monitoring_port', 9989)
+                    logging.info("Real-time monitoring started - API available at http://localhost:%d/stats", monitoring_port)
+                else:
+                    logging.info("Real-time monitoring started (console mode)")
+            except Exception as e:
+                logging.warning("Failed to start monitoring: %s", str(e))
+                monitor = None
+                monitoring_started = False
+
+        try:
+            # Create unified guide parser with single download manager
+            guide_parser = UnifiedGuideParser(
+                cache_manager=cache_manager,
+                base_downloader=base_downloader,
+                tvh_client=tvh_client,
+                max_workers=unified_config['max_workers'],
+                worker_strategy=unified_config['worker_strategy'],
+                enable_adaptive=unified_config['enable_adaptive'],
+                enable_monitoring=unified_config.get('enable_monitoring', False),
+                monitoring_config=unified_config,
+                download_manager=download_manager,  # Use single unified manager
+                monitor=monitor
+            )
+
+            # Track performance metrics
+            download_start = time.time()
+
+            # Download and parse guide data
+            guide_success = guide_parser.download_and_parse_guide(
                 grid_time_start=grid_time_start,
                 day_hours=day_hours,
                 config_manager=config_manager,
                 refresh_hours=refresh_hours,
             )
+
+            guide_download_time = time.time() - download_start
 
             if not guide_success:
                 logging.warning("Guide download had issues, but continuing with available data")
@@ -354,21 +411,81 @@ def main():
             cache_manager.perform_show_cleanup(active_series)
 
             # Download extended details if needed
+            extended_download_time = 0
             if config_manager.needs_extended_download():
-                extended_success = guide_parser.parse_extended_details()
+                extended_start = time.time()
+                extended_success = guide_parser.download_and_parse_extended_details()
+                extended_download_time = time.time() - extended_start
+
                 if not extended_success:
                     logging.warning(
                         "Extended details download had issues, using basic descriptions"
                     )
 
-            # Generate XMLTV
+            # Generate XMLTV with detailed progress tracking
+            xmltv_start = time.time()
             xmltv_generator = XmltvGenerator(cache_manager)
-            xmltv_success = xmltv_generator.generate_xmltv(
-                schedule=guide_parser.schedule, config=config, xmltv_file=xmltv_file
+
+            # Calculate total episodes
+            total_episodes = sum(
+                len([ep for ep in station.keys() if not ep.startswith("ch")])
+                for station in guide_parser.schedule.values()
             )
+
+            # Track different stages
+            if monitor:
+                # Stage 1: Language cache loading
+                cache_tracker = monitor.create_progress_tracker("Loading Language Cache", 100)
+                cache_tracker.update(0)
+
+                # Create thread to simulate cache loading progress
+                cache_stop = threading.Event()
+                def update_cache_progress():
+                    for i in range(1, 101, 10):
+                        if cache_stop.is_set():
+                            break
+                        cache_tracker.update(i)
+                        time.sleep(0.1)
+
+                cache_thread = threading.Thread(target=update_cache_progress, daemon=True)
+                cache_thread.start()
+
+            # Generate XMLTV
+            xmltv_start = time.time()
+            xmltv_generator = XmltvGenerator(cache_manager)
+
+            # Create simple progress tracker if monitoring enabled
+            if monitor:
+                # Calculate total episodes
+                total_episodes = sum(
+                    len([ep for ep in station.keys() if not ep.startswith("ch")])
+                    for station in guide_parser.schedule.values()
+                )
+
+                # Create a single "Generating XMLTV" progress bar
+                xml_progress_tracker = monitor.create_progress_tracker("Generating XMLTV", total_episodes)
+                xml_progress_tracker.update(0)
+                logging.info("Starting XMLTV generation for %d episodes", total_episodes)
+
+            # Generate XMLTV (includes all steps internally)
+            xmltv_success = xmltv_generator.generate_xmltv(
+                schedule=guide_parser.schedule,
+                config=config,
+                xmltv_file=xmltv_file
+            )
+
+            # Update progress to complete if monitoring
+            if monitor and 'xml_progress_tracker' in locals():
+                xml_progress_tracker.update(total_episodes)
+                time.sleep(0.5)  # Allow display to update
+
+            xmltv_generation_time = time.time() - xmltv_start
 
             if not xmltv_success:
                 logging.error("XMLTV generation failed")
+                # Clean up before returning
+                if 'guide_parser' in locals():
+                    guide_parser.cleanup()
                 return 1
 
             # Final cleanup
@@ -380,58 +497,191 @@ def main():
                     len(final_active_series),
                 )
 
-            # Final statistics
-            time_run = round(time.time() - python_start_time, 2)
-            logging.info("gracenote2epg completed in %s seconds", time_run)
+            # Stop monitoring before statistics output
+            if monitor and monitoring_started:
+                try:
+                    monitor.stop()
+                    monitoring_started = False
+                    logging.info("Real-time monitoring stopped")
+                except Exception as e:
+                    logging.warning("Error stopping monitoring: %s", str(e))
+
+            # Performance statistics with unified strategy reporting
+            total_time = time.time() - python_start_time
+
+            logging.info("=" * 60)
+            logging.info("PERFORMANCE SUMMARY:")
+            logging.info("  Total execution time: %.2f seconds", total_time)
+            logging.info("  Guide download: %.2f seconds (%.1f%%)",
+                        guide_download_time,
+                        (guide_download_time / total_time * 100))
+
+            if extended_download_time > 0:
+                logging.info("  Extended details: %.2f seconds (%.1f%%)",
+                            extended_download_time,
+                            (extended_download_time / total_time * 100))
+
+            logging.info("  XMLTV generation: %.2f seconds (%.1f%%)",
+                        xmltv_generation_time,
+                        (xmltv_generation_time / total_time * 100))
+
+            # Unified network statistics
+            stats = guide_parser.get_statistics()
+
+            logging.info("=" * 60)
+            logging.info("UNIFIED NETWORK STATISTICS:")
+            logging.info("  Architecture: Strategy-based unified download system")
+            logging.info("  Worker strategy: %s", unified_config['worker_strategy'])
+
+            # Worker pool statistics with verification
+            active_pools = stats.get('active_pools', {})
+            total_workers = 0
+            for task_type, pool_info in active_pools.items():
+                pool_stats = pool_info.get('statistics', {})
+                current_workers = pool_info.get('current_workers', 0)
+                max_workers = pool_info.get('max_workers', 0)
+                total_workers += current_workers
+
+                consistency_mark = "✓" if pool_stats.get('worker_count_consistent', True) else "✗"
+                logging.info("  %s: %d/%d workers %s", task_type, current_workers, max_workers, consistency_mark)
+
+            logging.info("  Total active workers: %d", total_workers)
+            logging.info("  Total requests: %d", stats.get('total_requests', 0))
+            logging.info("  Successful downloads: %d", stats.get('successful', 0))
+            logging.info("  Failed downloads: %d", stats.get('failed', 0))
+            logging.info("  From cache: %d", stats.get('cached', 0))
+
+            bytes_downloaded = stats.get('bytes_downloaded', 0)
+            if bytes_downloaded > 0:
+                logging.info("  Data downloaded: %.2f MB", bytes_downloaded / (1024 * 1024))
+
+            # Performance metrics
+            success_rate = stats.get('success_rate', 0)
+            if success_rate > 0:
+                logging.info("  Success rate: %.1f%%", success_rate)
+
+            requests_per_second = stats.get('requests_per_second', 0)
+            if requests_per_second > 0:
+                logging.info("  Download rate: %.1f requests/second", requests_per_second)
+
+            throughput = stats.get('throughput_mbps', 0)
+            if throughput > 0:
+                logging.info("  Throughput: %.2f MB/s", throughput)
+
+            # Adaptive strategy performance summary
+            if unified_config.get('enable_adaptive', False):
+                strategy_stats = stats.get('adaptive_strategy', {})
+                if strategy_stats.get('status') == 'active':
+                    logging.info("=" * 60)
+                    logging.info("ADAPTIVE STRATEGY PERFORMANCE:")
+
+                    for task_type, task_summary in strategy_stats.get('task_summaries', {}).items():
+                        if task_summary.get('samples', 0) > 0:
+                            logging.info("  %s:", task_type)
+                            logging.info("    Success rate: %.1f%%", task_summary['avg_success_rate'] * 100)
+                            logging.info("    Avg response time: %.2fs", task_summary['avg_response_time'])
+                            logging.info("    Performance trend: %s", task_summary['performance_trend'])
+                            logging.info("    Final workers: %d/%d",
+                                       task_summary['current_workers'], task_summary['max_workers'])
+
+            # WAF and rate limiting summary
+            total_waf = stats.get('waf_blocks', 0)
+            total_rate_limits = stats.get('rate_limit_hits', 0)
+
+            if total_waf > 0 or total_rate_limits > 0:
+                logging.info("=" * 60)
+                logging.info("RATE LIMITING & WAF SUMMARY:")
+                if total_waf > 0:
+                    logging.info("  WAF blocks encountered: %d", total_waf)
+                if total_rate_limits > 0:
+                    logging.info("  Rate limit hits: %d", total_rate_limits)
+
+                # Rate controller final state
+                rate_stats = stats.get('rate_controller', {})
+                if rate_stats:
+                    logging.info("  Final rate: %.1f req/s", rate_stats.get('current_rate', 0))
+                    if rate_stats.get('worker_reduction_active', False):
+                        logging.info("  Worker reduction: active")
+
+            # Enhanced monitoring summary
+            if monitor and unified_config.get('enable_monitoring', False):
+                logging.info("=" * 60)
+                logging.info("REAL-TIME MONITORING SUMMARY:")
+
+                try:
+                    final_stats = monitor.get_statistics()
+                    if final_stats:
+                        realtime_stats = final_stats.get('stats', {})
+                        workers_stats = final_stats.get('workers', {})
+
+                        logging.info("  Events tracked: %d", final_stats.get('recent_events_count', 0))
+                        logging.info("  Workers monitored: %d", len(workers_stats))
+
+                        # Detailed worker performance
+                        for worker_id, worker_info in sorted(workers_stats.items()):
+                            if isinstance(worker_info, dict) and worker_info.get('total_tasks', 0) > 0:
+                                logging.info("    Worker %d: %d tasks, %.1f%% success",
+                                           worker_id, worker_info['total_tasks'], worker_info.get('success_rate', 0))
+
+                        if unified_config.get('enable_web_api', False):
+                            monitoring_port = unified_config.get('monitoring_port', 9989)
+                            logging.info("  API access: http://localhost:%d/stats", monitoring_port)
+
+                except Exception as e:
+                    logging.debug("Error getting monitoring summary: %s", str(e))
+
+            # Performance recommendations
+            recommendations = guide_parser.get_performance_recommendations()
+            if recommendations:
+                logging.info("=" * 60)
+                logging.info("PERFORMANCE RECOMMENDATIONS:")
+                for rec in recommendations:
+                    logging.info("  • %s", rec)
+
+            logging.info("=" * 60)
+
             logging.info(
                 "%d Stations and %d Episodes written to xmltv.xml file",
                 xmltv_generator.station_count,
                 xmltv_generator.episode_count,
             )
 
-            # Downloader statistics
-            final_stats = downloader.get_stats()
-            logging.info("Final download statistics:")
-            logging.info("  Total requests: %d", final_stats["total_requests"])
-            logging.info("  WAF blocks encountered: %d", final_stats["waf_blocks"])
-            logging.info("  Final delay: %.2fs", final_stats["current_delay"])
+            # Clean up download system
+            guide_parser.cleanup()
 
-            # Log final cache and retention policy status for transparency
-            if retention_config.get("enabled", False):
-                log_retention = retention_config.get("log_retention_days", 30)
-                xmltv_retention = retention_config.get("xmltv_retention_days", 7)
+        except KeyboardInterrupt:
+            keyboard_interrupt = True
+            logging.info("KeyboardInterrupt received - shutting down gracefully...")
 
-                if log_retention == 0:
-                    log_desc = "unlimited"
-                else:
-                    log_desc = f"{log_retention} days"
+            # Stop XMLTV progress thread immediately if running
+            if xmltv_progress_thread and xmltv_progress_thread.is_alive():
+                xmltv_stop_event.set()
+                xmltv_progress_thread.join(timeout=1)
 
-                if xmltv_retention == 0:
-                    xmltv_desc = "unlimited"
-                else:
-                    xmltv_desc = f"{xmltv_retention} days"
-
-                logging.info("Unified cache and retention policy applied:")
-                logging.info(
-                    "  logrotate: %s (%s retention)",
-                    retention_config.get("interval", "daily"),
-                    log_desc,
-                )
-                logging.info("  rexmltv: %s retention", xmltv_desc)
-
-            # Output XMLTV to stdout ONLY if not redirected to file
-            # XMLTV standard: XML goes to stdout, logs go to stderr or file
-            if args.output is None:
-                # No --output specified, display XML on stdout
+            # Cleanup guide parser if it exists
+            if 'guide_parser' in locals():
                 try:
-                    with open(xmltv_file, "r", encoding="utf-8") as f:
-                        print(f.read(), end="")  # end='' to avoid extra blank line
-                except Exception as e:
-                    logging.error("Could not output XMLTV to stdout: %s", str(e))
-                    return 1
-            else:
-                # --output specified, XML is in the file
-                logging.info("XMLTV output written to: %s", args.output)
+                    guide_parser.cleanup()
+                except:
+                    pass
+
+            # Re-raise to propagate
+            raise
+
+        finally:
+            # Do not stop moniting as already done previously
+            pass
+
+        # Output XMLTV to stdout if not redirected to file
+        if args.output is None:
+            try:
+                with open(xmltv_file, "r", encoding="utf-8") as f:
+                    print(f.read(), end="")
+            except Exception as e:
+                logging.error("Could not output XMLTV to stdout: %s", str(e))
+                return 1
+        else:
+            logging.info("XMLTV output written to: %s", args.output)
 
         logging.info("Script completed successfully")
         logging.info("gracenote2epg session ended successfully")
@@ -439,10 +689,23 @@ def main():
         return 0
 
     except KeyboardInterrupt:
-        logging.info("Interrupted by user")
+        if not keyboard_interrupt:  # First KeyboardInterrupt
+            logging.info("Interrupted by user")
+        # Stop monitoring if it was started
+        if monitor and 'monitoring_started' in locals() and monitoring_started:
+            try:
+                monitor.stop()
+            except:
+                pass
         return 1
     except Exception as e:
         logging.exception("Critical error: %s", str(e))
+        # Stop monitoring if it was started
+        if monitor and 'monitoring_started' in locals() and monitoring_started:
+            try:
+                monitor.stop()
+            except:
+                pass
         logging.info("gracenote2epg session ended with error")
         logging.info("=" * 60)
         return 1
