@@ -16,7 +16,7 @@ from pathlib import Path
 from .gracenote2epg_args import ArgumentParser
 from .gracenote2epg_config import ConfigManager
 from .gracenote2epg_downloader import OptimizedDownloader
-from .gracenote2epg_parser import GuideParser
+from .parser import DataParser
 from .gracenote2epg_tvheadend import TvheadendClient
 from .gracenote2epg_utils import CacheManager
 from .gracenote2epg_xmltv import XmltvGenerator
@@ -335,11 +335,11 @@ def main():
 
         # Download and parse guide data
         with OptimizedDownloader(base_delay=0.8, min_delay=0.4) as downloader:
-            guide_parser = GuideParser(cache_manager, downloader, tvh_client)
+            # Create DataParser instance
+            data_parser = DataParser(cache_manager, downloader, tvh_client)
 
             # Download guide blocks with configurable refresh
-            # Passes config_manager instead of individual parameters
-            guide_success = guide_parser.optimized_guide_download(
+            guide_success = data_parser.download_and_parse_guide(
                 grid_time_start=grid_time_start,
                 day_hours=day_hours,
                 config_manager=config_manager,
@@ -350,12 +350,12 @@ def main():
                 logging.warning("Guide download had issues, but continuing with available data")
 
             # Clean show cache now that we have parsed episodes
-            active_series = guide_parser.get_active_series_list()
+            active_series = data_parser.get_active_series_list()
             cache_manager.perform_show_cleanup(active_series)
 
             # Download extended details if needed
             if config_manager.needs_extended_download():
-                extended_success = guide_parser.parse_extended_details()
+                extended_success = data_parser.download_and_parse_series_details()
                 if not extended_success:
                     logging.warning(
                         "Extended details download had issues, using basic descriptions"
@@ -364,7 +364,9 @@ def main():
             # Generate XMLTV
             xmltv_generator = XmltvGenerator(cache_manager)
             xmltv_success = xmltv_generator.generate_xmltv(
-                schedule=guide_parser.schedule, config=config, xmltv_file=xmltv_file
+                schedule=data_parser.schedule,
+                config=config,
+                xmltv_file=xmltv_file
             )
 
             if not xmltv_success:
@@ -372,7 +374,7 @@ def main():
                 return 1
 
             # Final cleanup
-            final_active_series = guide_parser.get_active_series_list()
+            final_active_series = data_parser.get_active_series_list()
             if final_active_series:
                 cache_manager.clean_show_cache(final_active_series)
                 logging.info(
