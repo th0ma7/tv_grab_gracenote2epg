@@ -5,13 +5,13 @@ A modular Python implementation for downloading TV guide data from
 tvlistings.gracenote.com with intelligent caching and TVheadend integration.
 """
 
-__version__ = "1.5.5"
+__version__ = "2.0.0-dev"
 __author__ = "th0ma7"
 __license__ = "GPL-3.0"
 
 from .gracenote2epg_args import ArgumentParser
 from .gracenote2epg_config import ConfigManager
-from .gracenote2epg_downloader import OptimizedDownloader
+from .downloader import OptimizedDownloader
 from .gracenote2epg_language import LanguageDetector
 from .parser import DataParser
 from .gracenote2epg_tvheadend import TvheadendClient

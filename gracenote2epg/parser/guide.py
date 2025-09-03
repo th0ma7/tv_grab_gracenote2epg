@@ -1,12 +1,16 @@
 """
 Guide data parser for gracenote2epg
+
+Handles parsing of TV guide JSON data from gracenote.com, extracting stations
+and episodes information. Contains only parsing logic, no HTTP or caching code.
 """
 
+import calendar
 import json
 import logging
-import calendar
 import time
 from typing import Dict, Optional
+
 
 class GuideParser:
     """Parses TV guide JSON data"""
@@ -16,7 +20,7 @@ class GuideParser:
         self.schedule: Dict = {}
         
     def parse_stations(self, content: bytes) -> bool:
-        """Parse station information from guide data"""
+        """Parse station information from guide JSON data"""
         try:
             ch_guide = json.loads(content)
             
@@ -26,7 +30,7 @@ class GuideParser:
                 if self._should_process_station(station):
                     self.schedule[station_id] = {}
                     
-                    # Extract station info
+                    # Extract basic station info
                     self.schedule[station_id]["chfcc"] = station.get("callSign")
                     self.schedule[station_id]["chnam"] = station.get("affiliateName")
                     
@@ -37,7 +41,7 @@ class GuideParser:
                     else:
                         self.schedule[station_id]["chicon"] = ""
                     
-                    # Handle channel number
+                    # Handle channel number with TVheadend integration
                     if self.tvh_client:
                         matched_channel = self.tvh_client.get_matched_channel_number(
                             station, use_channel_matching=True
@@ -46,7 +50,7 @@ class GuideParser:
                     else:
                         matched_channel = station.get("channelNo", "")
                         tvh_name = None
-                    
+
                     self.schedule[station_id]["chnum"] = matched_channel
                     self.schedule[station_id]["chtvh"] = tvh_name
                     
@@ -57,7 +61,7 @@ class GuideParser:
             return False
     
     def parse_episodes(self, content: bytes) -> str:
-        """Parse episode information from guide data"""
+        """Parse episode information from guide JSON data"""
         check_tba = "Safe"
         
         try:
@@ -70,13 +74,13 @@ class GuideParser:
                     episodes = station.get("events", [])
                     
                     for episode in episodes:
-                        episode_data = self._parse_episode(episode)
+                        episode_data = self._parse_single_episode(episode)
                         if episode_data:
                             ep_key = episode_data["epstart"]
                             self.schedule[station_id][ep_key] = episode_data
                             
-                            # Check for TBA
-                            if self._check_tba(episode_data):
+                            # Check for TBA content
+                            if self._check_tba_content(episode_data):
                                 check_tba = "Unsafe"
                                 
         except Exception as e:
@@ -84,9 +88,9 @@ class GuideParser:
             
         return check_tba
     
-    def _parse_episode(self, episode: Dict) -> Optional[Dict]:
-        """Parse individual episode data"""
-        # Extract start time
+    def _parse_single_episode(self, episode: Dict) -> Optional[Dict]:
+        """Parse individual episode data from JSON"""
+        # Extract and validate start time
         start_time_str = episode.get("startTime", "")
         if not start_time_str:
             return None
@@ -113,14 +117,14 @@ class GuideParser:
             except (ValueError, TypeError):
                 pass
         
-        # Get program info
+        # Get program information
         program = episode.get("program", {})
         
-        # Get descriptions
+        # Extract descriptions with fallback logic
         short_desc = program.get("shortDesc") or ""
         long_desc = program.get("longDesc") or ""
         
-        # Build episode data
+        # Build complete episode data structure
         return {
             "epid": program.get("tmsId"),
             "epstart": ep_key,
@@ -140,19 +144,19 @@ class GuideParser:
                 if episode.get("thumbnail")
                 else ""
             ),
-            "epoad": None,
+            "epoad": None,  # Will be populated by series parser
             "epstar": None,
             "epfilter": episode.get("filter", []),
-            "epgenres": None,
-            "epcredits": None,
+            "epgenres": None,  # Will be populated by series parser
+            "epcredits": None,  # Will be populated by series parser
             "epseries": program.get("seriesId"),
-            "epimage": None,
-            "epfan": None,
-            "epseriesdesc": None,
+            "epimage": None,  # Will be populated by series parser
+            "epfan": None,  # Will be populated by series parser
+            "epseriesdesc": None,  # Will be populated by series parser
         }
     
     def _should_process_station(self, station_data: Dict) -> bool:
-        """Determine if a station should be processed"""
+        """Determine if a station should be processed based on filtering rules"""
         if self.tvh_client:
             return self.tvh_client.should_process_station(
                 station_data,
@@ -160,10 +164,10 @@ class GuideParser:
                 use_tvh_matching=True,
                 use_channel_matching=True,
             )
-        return True
+        return True  # Process all stations if no TVheadend client
     
-    def _check_tba(self, episode_data: Dict) -> bool:
-        """Check if episode contains TBA content"""
+    def _check_tba_content(self, episode_data: Dict) -> bool:
+        """Check if episode contains TBA (To Be Announced) content"""
         if episode_data.get("epshow") and "TBA" in episode_data["epshow"]:
             return True
         if episode_data.get("eptitle") and "TBA" in episode_data["eptitle"]:
@@ -171,5 +175,20 @@ class GuideParser:
         return False
     
     def get_schedule(self) -> Dict:
-        """Get the parsed schedule"""
+        """Get the complete parsed schedule"""
         return self.schedule
+
+    def get_parsing_statistics(self) -> Dict:
+        """Get parsing statistics"""
+        station_count = len(self.schedule)
+        episode_count = 0
+
+        for station_data in self.schedule.values():
+            for key in station_data.keys():
+                if not key.startswith("ch"):  # Skip channel metadata
+                    episode_count += 1
+
+        return {
+            "stations_parsed": station_count,
+            "episodes_parsed": episode_count,
+        }
