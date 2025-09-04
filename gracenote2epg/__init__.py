@@ -9,7 +9,7 @@ __version__ = "2.0.0-dev"
 __author__ = "th0ma7"
 __license__ = "GPL-3.0"
 
-from .gracenote2epg_args import ArgumentParser
+from .args import ArgumentParser
 from .gracenote2epg_config import ConfigManager
 from .downloader import OptimizedDownloader
 from .gracenote2epg_language import LanguageDetector

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 # Specific imports
-from .gracenote2epg_args import ArgumentParser
+from .args import ArgumentParser
 from .gracenote2epg_config import ConfigManager
 from .parser import DataParser
 from .gracenote2epg_tvheadend import TvheadendClient
