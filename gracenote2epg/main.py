@@ -15,12 +15,12 @@ from pathlib import Path
 
 # Specific imports
 from .args import ArgumentParser
-from .gracenote2epg_config import ConfigManager
+from .config import ConfigManager
 from .parser import DataParser
-from .gracenote2epg_tvheadend import TvheadendClient
-from .gracenote2epg_utils import CacheManager
-from .gracenote2epg_xmltv import XmltvGenerator
-from .gracenote2epg_logrotate import LogRotationManager
+from .tvheadend import TvheadendClient
+from .utils import CacheManager
+from .xmltv import XmltvGenerator
+from .logrotate import LogRotationManager
 
 # Package version
 from . import __version__

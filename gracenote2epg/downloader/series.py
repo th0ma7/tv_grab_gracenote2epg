@@ -10,7 +10,7 @@ import logging
 from typing import Dict, List, Optional, Set
 
 from .base import OptimizedDownloader
-from ..gracenote2epg_utils import CacheManager
+from ..utils import CacheManager
 
 
 class SeriesDownloader:

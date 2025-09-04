@@ -94,7 +94,7 @@ class DataParser:
         
         for count in range(day_hours):
             # Generate filename (same logic as downloader)
-            from ..gracenote2epg_utils import TimeUtils
+            from ..utils import TimeUtils
             standard_block_time = TimeUtils.get_standard_block_time(grid_time)
             filename = standard_block_time.strftime("%Y%m%d%H") + ".json.gz"
             

@@ -277,7 +277,7 @@ LineupID Auto-Detection:
             self.parser.error("--show-lineup requires one of: --zip, --postal, or --code")
         
         # Delegated to ConfigManager for the lineup logic
-        from ..gracenote2epg_config import ConfigManager
+        from ..config import ConfigManager
         temp_config = ConfigManager(Path("temp"))
         debug_mode = args.debug if hasattr(args, "debug") else False
         

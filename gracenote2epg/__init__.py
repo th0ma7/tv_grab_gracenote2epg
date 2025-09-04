@@ -10,14 +10,14 @@ __author__ = "th0ma7"
 __license__ = "GPL-3.0"
 
 from .args import ArgumentParser
-from .gracenote2epg_config import ConfigManager
+from .config import ConfigManager
 from .downloader import OptimizedDownloader
-from .gracenote2epg_language import LanguageDetector
+from .language import LanguageDetector
 from .parser import DataParser
-from .gracenote2epg_tvheadend import TvheadendClient
-from .gracenote2epg_utils import CacheManager, TimeUtils
-from .gracenote2epg_xmltv import XmltvGenerator
-from .gracenote2epg_dictionaries import (
+from .tvheadend import TvheadendClient
+from .utils import CacheManager, TimeUtils
+from .xmltv import XmltvGenerator
+from .dictionaries import (
     get_category_translation,
     get_term_translation,
     get_language_display_name,

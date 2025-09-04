@@ -11,7 +11,7 @@ import urllib.parse
 from typing import Dict, Optional
 
 from .base import OptimizedDownloader
-from ..gracenote2epg_utils import CacheManager, TimeUtils
+from ..utils import CacheManager, TimeUtils
 
 
 class GuideDownloader:
