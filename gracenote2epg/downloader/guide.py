@@ -60,7 +60,7 @@ class GuideDownloader:
             if success:
                 # Determine if it was downloaded or cached
                 time_from_now = grid_time - time.time()
-                if time_from_now < (refresh_hours * 3600):
+                if 0 < time_from_now < (refresh_hours * 3600):
                     self.downloaded_count += 1
                 else:
                     self.cached_count += 1
