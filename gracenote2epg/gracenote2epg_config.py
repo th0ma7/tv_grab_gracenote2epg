@@ -861,20 +861,180 @@ class ConfigManager:
         # Generate lineup IDs using new simplified method
         auto_lineup_config = self._get_auto_lineup_config(clean_postal, country)
 
-        # Display results based on mode
+        # Display results using unified function
+        self._display_lineup_output(
+            postal_code, clean_postal, country_name, country, auto_lineup_config, debug_mode
+        )
+
+        return True
+
+    def _display_lineup_output(
+        self,
+        postal_code: str,
+        clean_postal: str,
+        country_name: str,
+        country: str,
+        lineup_config: Dict,
+        debug_mode: bool = False
+    ):
+        """
+        Display lineup detection output - unified function for both simple and debug modes
+
+        Args:
+            postal_code: Original postal code input
+            clean_postal: Normalized postal code
+            country_name: Full country name
+            country: Country code (USA/CAN)
+            lineup_config: Auto-generated lineup configuration
+            debug_mode: Whether to show debug information
+        """
+        # Calculate current time rounded to nearest 3-hour block
+        import time
+        from datetime import datetime
+
+        now = datetime.now().replace(microsecond=0, second=0, minute=0)
+        # Round to nearest 3-hour block (0, 3, 6, 9, 12, 15, 18, 21)
+        standard_hour = (now.hour // 3) * 3
+        standard_dt = now.replace(hour=standard_hour)
+        example_time = str(int(time.mktime(standard_dt.timetuple())))
+
+        # Header (different for debug mode)
         if debug_mode:
-            # Debug mode: detailed technical information
             print("=" * 70)
             print("GRACENOTE2EPG - LINEUP DETECTION (DEBUG MODE)")
             print("=" * 70)
-            self._display_debug_output(
-                postal_code, clean_postal, country_name, country, auto_lineup_config
-            )
-        else:
-            # Normal mode: simplified output
-            self._display_simple_output(auto_lineup_config, country, clean_postal)
+            print(f"📍 LOCATION INFORMATION:")
+            print(f"   Normalized code:   {clean_postal}")
+            print(f"   Detected country:  {country_name} ({country})")
+            print()
 
-        return True
+        # API parameters
+        print(f"🌍 GRACENOTE API URL PARAMETERS:")
+        print(f"   lineupId={lineup_config['api_lineup_id']}")
+        print(f"   country={country}")
+        print(f"   postalCode={clean_postal}")
+        print()
+
+        # Validation URLs
+        print(f"✅ VALIDATION URLs (manual verification):")
+        print(f"   Auto-generated: {lineup_config['tvtv_url']}")
+
+        if debug_mode:
+            print(
+                f"   Note: OTA format is {lineup_config['tvtv_lineup_id']} "
+                f"(country + OTA + postal, no -DEFAULT suffix)"
+            )
+            print(f"   Cable/Satellite providers use different format: {country}-[ProviderID]-X")
+
+        print(f"   Manual lookup:")
+        if country == "CAN":
+            print(f"     1. Go to https://www.tvtv.ca/")
+            print(f"     2. Enter postal code: {clean_postal}")
+            print(
+                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → "
+                f"URL shows lu{lineup_config['tvtv_lineup_id']}"
+            )
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        else:
+            print(f"     1. Go to https://www.tvtv.us/")
+            print(f"     2. Enter ZIP code: {clean_postal}")
+            print(
+                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → "
+                f"URL shows lu{lineup_config['tvtv_lineup_id']}"
+            )
+            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
+        print()
+
+        # API test URL
+        print(f"🔗 GRACENOTE API URL FOR TESTING:")
+
+        if debug_mode:
+            # Show the human-readable time for debugging
+            print(f"   Using current block: {standard_dt.strftime('%Y-%m-%d %H:00')} "
+                  f"(timestamp: {example_time})")
+
+        test_url = (
+            f"https://tvlistings.gracenote.com/api/grid?"
+            f"aid=orbebb&"
+            f"country={country}&"
+            f"postalCode={clean_postal}&"
+            f"time={example_time}&"
+            f"timespan=3&"
+            f"isOverride=true&"
+            f"userId=-&"
+            f"lineupId={lineup_config['api_lineup_id']}&"
+            f"headendId=lineupId"
+        )
+        print(f"   {test_url}")
+        print()
+
+        # Debug-only sections
+        if debug_mode:
+            print(f"📊 GRACENOTE API - OTHER COMMON PARAMETERS:")
+            print(
+                f"   • &device=[-|X]                    "
+                f"Device type: - for Over-the-Air, X for cable/satellite"
+            )
+            print(
+                f"   • &pref=16%2C128                   "
+                f"Preference codes (16,128): channel lineup preferences"
+            )
+            print(
+                f"   • &timezone=America%2FNew_York     "
+                f"User timezone for schedule times (URL-encoded)"
+            )
+            print(f"   • &languagecode=en-us              Content language: en-us, fr-ca, es-us, etc.")
+            print(
+                f"   • &TMSID=                          "
+                f"Tribune Media Services ID (legacy, usually empty)"
+            )
+            print(
+                f"   • &AffiliateID=lat                 "
+                f"Partner/affiliate identifier (lat=local affiliate)"
+            )
+            print()
+
+            print(f"💾 MANUAL DOWNLOAD:")
+            print(f"⚠️  NOTE: Using browser-like headers to bypass AWS WAF")
+            print()
+            print(
+                f'curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                f'AppleWebKit/537.36" \\'
+            )
+            print(f'     -H "Accept: application/json, text/html, application/xhtml+xml, */*" \\')
+            print(f'     "{test_url}" > out.json')
+            print()
+
+            print(f"🔧 RECOMMENDED CONFIGURATION:")
+            country_full = "Canada" if country == "CAN" else "United States"
+            print(f"   <!-- Simplified configuration (auto-detection) -->")
+            print(f'   <setting id="zipcode">{clean_postal}</setting>')
+            print(f'   <setting id="lineupid">auto</setting>')
+            print()
+            print(f"   <!-- Alternative: Copy tvtv.com lineup ID directly -->")
+            print(f"   <!-- <setting id=\"lineupid\">{lineup_config['tvtv_lineup_id']}</setting> -->")
+            print()
+            print(f"   <!-- For Cable/Satellite providers: -->")
+            print(f'   <!-- <setting id="lineupid">{country}-[ProviderID]-X</setting> -->')
+            print(
+                f'   <!-- Example: <setting id="lineupid">{country}-0005993-X</setting> '
+                f'for Videotron -->'
+            )
+            print()
+
+            print("=" * 70)
+            print("💡 NEXT STEPS:")
+            print("1. Verify the validation URLs show your local channels")
+            print("2. Update your gracenote2epg.xml with the recommended configuration")
+            print("3. Run: tv_grab_gracenote2epg --days 1 --console")
+            print("4. Look for 'Auto-detected lineupID' in the logs")
+            print("5. Confirm no HTTP 400 errors in download attempts")
+            print("=" * 70)
+            print()
+
+        # Documentation link (always shown)
+        print("📖 DOCUMENTATION:")
+        print("   https://github.com/th0ma7/gracenote2epg/blob/main/docs/lineup-configuration.md")
 
     def validate_postal_code_format(self, postal_code: str) -> Tuple[bool, str, str]:
         """
@@ -894,171 +1054,6 @@ class ConfigManager:
             return True, "CAN", clean_postal
         else:
             return False, "", clean_postal
-
-    def _display_simple_output(self, lineup_config: Dict, country: str, clean_postal: str):
-        """Display simplified output for normal mode"""
-        print(f"🌐 GRACENOTE API URL PARAMETERS:")
-        print(f"   lineupId={lineup_config['api_lineup_id']}")
-        print(f"   country={country}")
-        print(f"   postalCode={clean_postal}")
-        print()
-
-        print(f"✅ VALIDATION URLs (manual verification):")
-        print(f"   Auto-generated: {lineup_config['tvtv_url']}")
-        print(f"   Manual lookup:")
-        if country == "CAN":
-            print(f"     1. Go to https://www.tvtv.ca/")
-            print(f"     2. Enter postal code: {clean_postal}")
-            print(
-                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}"
-            )
-            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
-        else:
-            print(f"     1. Go to https://www.tvtv.us/")
-            print(f"     2. Enter ZIP code: {clean_postal}")
-            print(
-                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}"
-            )
-            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
-        print()
-
-        print(f"🔗 GRACENOTE API URL FOR TESTING:")
-        example_time = "1755432000"  # Example timestamp
-        test_url = (
-            f"https://tvlistings.gracenote.com/api/grid?"
-            f"aid=orbebb&"
-            f"country={country}&"
-            f"postalCode={clean_postal}&"
-            f"time={example_time}&"
-            f"timespan=3&"
-            f"isOverride=true&"
-            f"userId=-&"
-            f"lineupId={lineup_config['api_lineup_id']}&"
-            f"headendId=lineupId"
-        )
-        print(f"   {test_url}")
-        print()
-
-        print("📖 DOCUMENTATION:")
-        print("   https://github.com/th0ma7/gracenote2epg/blob/main/docs/lineup-configuration.md")
-
-    def _display_debug_output(
-        self,
-        postal_code: str,
-        clean_postal: str,
-        country_name: str,
-        country: str,
-        lineup_config: Dict,
-    ):
-        """Display debug output with technical information"""
-        print(f"📍 LOCATION INFORMATION:")
-        print(f"   Normalized code:   {clean_postal}")
-        print(f"   Detected country:  {country_name} ({country})")
-        print()
-
-        print(f"🌐 GRACENOTE API URL PARAMETERS:")
-        print(f"   lineupId={lineup_config['api_lineup_id']}")
-        print(f"   country={country}")
-        print(f"   postalCode={clean_postal}")
-        print()
-
-        print(f"✅ VALIDATION URLs (manual verification):")
-        print(f"   Auto-generated: {lineup_config['tvtv_url']}")
-        print(
-            f"   Note: OTA format is {lineup_config['tvtv_lineup_id']} (country + OTA + postal, no -DEFAULT suffix)"
-        )
-        print(f"   Cable/Satellite providers use different format: {country}-[ProviderID]-X")
-        print(f"   Manual lookup:")
-        if country == "CAN":
-            print(f"     1. Go to https://www.tvtv.ca/")
-            print(f"     2. Enter postal code: {clean_postal}")
-            print(
-                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}"
-            )
-            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
-        else:
-            print(f"     1. Go to https://www.tvtv.us/")
-            print(f"     2. Enter ZIP code: {clean_postal}")
-            print(
-                f"     3a. For OTA: Click 'Broadcast' → 'Local Over the Air' → URL shows lu{lineup_config['tvtv_lineup_id']}"
-            )
-            print(f"     3b. For Cable/Sat: Select provider → URL shows lu{country}-[ProviderID]-X")
-        print()
-
-        print(f"🔗 GRACENOTE API URLs FOR TESTING:")
-        example_time = "1755432000"  # Example timestamp
-        test_url = (
-            f"https://tvlistings.gracenote.com/api/grid?"
-            f"aid=orbebb&"
-            f"country={country}&"
-            f"postalCode={clean_postal}&"
-            f"time={example_time}&"
-            f"timespan=3&"
-            f"isOverride=true&"
-            f"userId=-&"
-            f"lineupId={lineup_config['api_lineup_id']}&"
-            f"headendId=lineupId"
-        )
-        print(f"   {test_url}")
-        print()
-
-        print(f"📊 GRACENOTE API - OTHER COMMON PARAMETERS:")
-        print(
-            f"   • &device=[-|X]                    Device type: - for Over-the-Air, X for cable/satellite"
-        )
-        print(
-            f"   • &pref=16%2C128                   Preference codes (16,128): channel lineup preferences"
-        )
-        print(
-            f"   • &timezone=America%2FNew_York     User timezone for schedule times (URL-encoded)"
-        )
-        print(f"   • &languagecode=en-us              Content language: en-us, fr-ca, es-us, etc.")
-        print(
-            f"   • &TMSID=                          Tribune Media Services ID (legacy, usually empty)"
-        )
-        print(
-            f"   • &AffiliateID=lat                 Partner/affiliate identifier (lat=local affiliate)"
-        )
-        print()
-
-        print(f"💾 MANUAL DOWNLOAD:")
-        print(f"⚠️  NOTE: Using browser-like headers to bypass AWS WAF")
-        print()
-        print(
-            f'curl -s -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \\'
-        )
-        print(f'     -H "Accept: application/json, text/html, application/xhtml+xml, */*" \\')
-        print(f'     "{test_url}" > out.json')
-        print()
-
-        print(f"🔧 RECOMMENDED CONFIGURATION:")
-        country_full = "Canada" if country == "CAN" else "United States"
-        print(f"   <!-- Simplified configuration (auto-detection) -->")
-        print(f'   <setting id="zipcode">{clean_postal}</setting>')
-        print(f'   <setting id="lineupid">auto</setting>')
-        print()
-        print(f"   <!-- Alternative: Copy tvtv.com lineup ID directly -->")
-        print(f"   <!-- <setting id=\"lineupid\">{lineup_config['tvtv_lineup_id']}</setting> -->")
-        print()
-        print(f"   <!-- For Cable/Satellite providers: -->")
-        print(f'   <!-- <setting id="lineupid">{country}-[ProviderID]-X</setting> -->')
-        print(
-            f'   <!-- Example: <setting id="lineupid">{country}-0005993-X</setting> for Videotron -->'
-        )
-        print()
-
-        print("=" * 70)
-        print("💡 NEXT STEPS:")
-        print("1. Verify the validation URLs show your local channels")
-        print("2. Update your gracenote2epg.xml with the recommended configuration")
-        print("3. Run: tv_grab_gracenote2epg --days 1 --console")
-        print("4. Look for 'Auto-detected lineupID' in the logs")
-        print("5. Confirm no HTTP 400 errors in download attempts")
-        print("=" * 70)
-        print()
-
-        print("📖 DOCUMENTATION:")
-        print("   https://github.com/th0ma7/gracenote2epg/blob/main/docs/lineup-configuration.md")
 
     def normalize_lineup_id(self, lineupid: str, country: str, postal_code: str) -> str:
         """

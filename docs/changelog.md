@@ -5,6 +5,14 @@ All notable changes to gracenote2epg are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2025-09-06
+
+### Fixed
+- **Show Lineup**:
+   - Fix `--show-lineup` where timestamp was fixed leading to non-functional URL.
+   - Refactor display functions to eliminate code duplication.
+- **No Refresh**: Fix `--norefresh` where `'refresh_hours == 0'` was not handled leading to first 3h guide block being downloaded instead of using the cache as expected.
+
 ## [1.5.4] - 2025-08-27
 
 ### Fixed
