@@ -82,7 +82,7 @@ class GuideParser:
             ):
                 # Determine if it was downloaded or cached
                 time_from_now = grid_time - time.time()
-                if time_from_now < (refresh_hours * 3600):
+                if 0 < time_from_now < (refresh_hours * 3600):
                     # In refresh window - likely downloaded
                     downloaded_count += 1
                 else:

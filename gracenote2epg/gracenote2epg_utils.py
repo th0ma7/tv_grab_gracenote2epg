@@ -312,61 +312,77 @@ class CacheManager:
         file_path = self.cache_dir / filename
         file_exists = file_path.exists()
 
-        # Determine if refresh needed (first 36-48h)
-        time_from_now = grid_time - time.time()
-        force_refresh = time_from_now < (refresh_hours * 3600)
-
-        block_time = TimeUtils.get_standard_block_time(grid_time)
-        block_end = (block_time.hour + 3) % 24
-        block_display = f"{block_time.strftime('%Y-%m-%d %H:00')}-{block_end:02d}:00"
-
-        if not file_exists:
-            # New block to download
-            logging.info("Downloading new block: %s", block_display)
-            content = downloader.download_with_retry(url, method="GET", timeout=8)
-
-            if content and self.validate_and_save_guide_block(content, filename):
-                logging.info("  Success: %s (%d bytes)", filename, len(content))
+        # Handling for --norefresh (refresh_hours == 0)
+        # Never download anything when refresh is disabled
+        if refresh_hours == 0:
+            if file_exists:
+                # Use cached version
+                block_time = TimeUtils.get_standard_block_time(grid_time)
+                block_end = (block_time.hour + 3) % 24
+                block_display = f"{block_time.strftime('%Y-%m-%d %H:00')}-{block_end:02d}:00"
+                logging.debug("Using cached: %s [--norefresh mode]", block_display)
                 return True
             else:
-                logging.warning("  Failed download: %s", filename)
+                # No cache available and can't download with --norefresh
+                logging.warning("Block %s not in cache and --norefresh prevents download", filename)
                 return False
-
-        elif force_refresh:
-            # Existing block to refresh
-            logging.info("Refreshing block: %s [REFRESH]", block_display)
-
-            # Create temporary backup
-            backup_file = file_path.with_suffix(".backup_temp")
-            try:
-                shutil.copy2(file_path, backup_file)
-                logging.debug("  Backup created: %s", backup_file.name)
-            except Exception as e:
-                logging.warning("  Cannot create backup: %s", str(e))
-                backup_file = None
-
-            # Download new version
-            content = downloader.download_with_retry(url, method="GET", timeout=8)
-
-            if content and self.validate_and_save_guide_block(content, filename):
-                # Success - remove backup
-                if backup_file and backup_file.exists():
-                    backup_file.unlink()
-                logging.info("  Refresh success: %s (%d bytes)", filename, len(content))
-                return True
-            else:
-                # Failed - restore backup
-                if backup_file and backup_file.exists():
-                    shutil.move(str(backup_file), str(file_path))
-                    logging.info("  Backup restored after failed refresh: %s", filename)
-                    return True  # We still have the file
-                else:
-                    logging.warning("  Refresh failed and no backup: %s", filename)
-                    return False
         else:
-            # Use cached version
-            logging.debug("Using cached: %s", block_display)
-            return True
+            # Determine if refresh needed (first X hours)
+            time_from_now = grid_time - time.time()
+            force_refresh = time_from_now < (refresh_hours * 3600)
+
+            block_time = TimeUtils.get_standard_block_time(grid_time)
+            block_end = (block_time.hour + 3) % 24
+            block_display = f"{block_time.strftime('%Y-%m-%d %H:00')}-{block_end:02d}:00"
+
+            if not file_exists:
+                # New block to download
+                logging.info("Downloading new block: %s", block_display)
+                content = downloader.download_with_retry(url, method="GET", timeout=8)
+
+                if content and self.validate_and_save_guide_block(content, filename):
+                    logging.info("  Success: %s (%d bytes)", filename, len(content))
+                    return True
+                else:
+                    logging.warning("  Failed download: %s", filename)
+                    return False
+
+            elif force_refresh:
+                # Existing block to refresh
+                logging.info("Refreshing block: %s [REFRESH]", block_display)
+
+                # Create temporary backup
+                backup_file = file_path.with_suffix(".backup_temp")
+                try:
+                    shutil.copy2(file_path, backup_file)
+                    logging.debug("  Backup created: %s", backup_file.name)
+                except Exception as e:
+                    logging.warning("  Cannot create backup: %s", str(e))
+                    backup_file = None
+
+                # Download new version
+                logging.info("Downloading refresh block: %s", block_display)
+                content = downloader.download_with_retry(url, method="GET", timeout=8)
+
+                if content and self.validate_and_save_guide_block(content, filename):
+                    # Success - remove backup
+                    if backup_file and backup_file.exists():
+                        backup_file.unlink()
+                    logging.info("  Refresh success: %s (%d bytes)", filename, len(content))
+                    return True
+                else:
+                    # Failed - restore backup
+                    if backup_file and backup_file.exists():
+                        shutil.move(str(backup_file), str(file_path))
+                        logging.info("  Backup restored after failed refresh: %s", filename)
+                        return True  # We still have the file
+                    else:
+                        logging.warning("  Refresh failed and no backup: %s", filename)
+                        return False
+            else:
+                # Use cached version
+                logging.debug("Using cached: %s", block_display)
+                return True
 
     def perform_initial_cleanup(
         self, grid_time_start: float, guide_days: int, xmltv_file: Path, xmltv_retention_days: int
